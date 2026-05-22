@@ -590,6 +590,440 @@ app.post('/removebusdriver', requireRole('admin', 'driver'), async (req, res) =>
   }
 });
 
+// Passenger picker source for seatdriver.js (everyone who is not a driver).
+app.get('/passengerusersjson', requireRole('admin', 'driver'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT userid, perid, first_name, last_name
+      FROM chp.users
+      WHERE department NOT IN ('Driver', 'Old Driver') OR department IS NULL
+      ORDER BY first_name, last_name
+    `);
+    res.json({ rows: result.rows });
+  } catch (err) {
+    console.error('GET /passengerusersjson error:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// ===========================================================================
+// HR/admin & driver management dashboards (ported from Gateway -> chp.*)
+// ===========================================================================
+
+// --- Booking dashboards (admin) ---
+app.get('/thisweekdashboard', requireRole('admin'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT u.userid, u.perid, u.first_name, u.last_name, u.location, t.route,
+             t.monday_inbound, t.monday_outbound,
+             t.tuesday_inbound, t.tuesday_outbound,
+             t.wednesday_inbound, t.wednesday_outbound,
+             t.thursday_inbound, t.thursday_outbound,
+             t.friday_inbound, t.friday_outbound,
+             t.saturday_inbound, t.saturday_outbound,
+             t.sunday_inbound, t.sunday_outbound,
+             t.department_approval
+      FROM chp.thisweek t
+      LEFT JOIN chp.users u ON u.userid = t.userid
+      ORDER BY t.route
+    `);
+    res.render('thisweekdashboard', { rows: result.rows });
+  } catch (err) {
+    console.error('GET /thisweekdashboard error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.get('/nextweekdashboard', requireRole('admin'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT u.userid, u.perid, u.first_name, u.last_name, u.location, t.route,
+             t.monday_inbound, t.monday_outbound,
+             t.tuesday_inbound, t.tuesday_outbound,
+             t.wednesday_inbound, t.wednesday_outbound,
+             t.thursday_inbound, t.thursday_outbound,
+             t.friday_inbound, t.friday_outbound,
+             t.saturday_inbound, t.saturday_outbound,
+             t.sunday_inbound, t.sunday_outbound
+      FROM chp.nextweek t
+      LEFT JOIN chp.users u ON u.userid = t.userid
+      ORDER BY t.route
+    `);
+    res.render('nextweekdashboard', { rows: result.rows });
+  } catch (err) {
+    console.error('GET /nextweekdashboard error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.post('/update-approval-department-thisweek', requireRole('admin'), async (req, res) => {
+  const { userId, status } = req.body;
+  try {
+    await pool.query('UPDATE chp.thisweek SET department_approval = $1 WHERE userid = $2', [status, userId]);
+    res.status(200).send('Approval status updated successfully');
+  } catch (error) {
+    console.error('Error updating thisweek approval:', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.get('/sumthisweek', requireRole('admin'), async (req, res) => {
+  try {
+    const routeResult = await pool.query('SELECT * FROM chp.route');
+    const thisweekResult = await pool.query('SELECT * FROM chp.thisweek');
+    const rows = routeResult.rows;
+
+    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    const count = {};
+    thisweekResult.rows.forEach((item) => {
+      const route = item.route;
+      if (!count[route]) count[route] = {};
+      days.forEach((day) => {
+        const inboundTime = item[`${day}_inbound`];
+        const outboundTime = item[`${day}_outbound`];
+        if (!count[route][day]) count[route][day] = { inbound: {}, outbound: {} };
+        if (!count[route][day].inbound[inboundTime]) count[route][day].inbound[inboundTime] = 0;
+        if (!count[route][day].outbound[outboundTime]) count[route][day].outbound[outboundTime] = 0;
+        count[route][day].inbound[inboundTime]++;
+        count[route][day].outbound[outboundTime]++;
+      });
+    });
+
+    res.render('sumthisweek', { rows, count });
+  } catch (err) {
+    console.error('GET /sumthisweek error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+// --- Bus management: bustoday (HR) reuses the chp.driver insert/edit helpers ---
+app.get('/bustoday', requireRole('admin'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, per_id AS perid, first_name, last_name,
+             route, day, bound, "time", bus_number AS number
+      FROM chp.bustoday
+    `);
+    res.render('bustoday', { rows: result.rows });
+  } catch (err) {
+    console.error('GET /bustoday error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.get('/bustodayjson', requireRole('admin'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT b.id, b.per_id AS perid, b.first_name, b.last_name,
+             b.route, b.day, b.bound, b."time", b.bus_number AS number,
+             COUNT(s.id) AS pax
+      FROM chp.bustoday b
+      LEFT JOIN chp.seattoday s
+        ON  b.route = s.route AND b.day = s.day AND b.bound = s.bound
+        AND b."time" = s."time" AND b.bus_number = s.busnumber
+      GROUP BY b.id, b.per_id, b.first_name, b.last_name,
+               b.route, b.day, b.bound, b."time", b.bus_number
+    `);
+    res.json({ rows: result.rows });
+  } catch (err) {
+    console.error('GET /bustodayjson error:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/insertbustoday', requireRole('admin'), async (req, res) => {
+  try {
+    await chpInsertBusAssignment('chp.bustoday', req.body);
+    return res.status(200).json({ message: 'Bus insert successfully' });
+  } catch (error) {
+    console.error('insertbustoday failed:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/editbustoday', requireRole('admin'), async (req, res) => {
+  if (!req.body.id) return res.status(400).json({ error: 'No id provided' });
+  try {
+    const result = await chpEditBusAssignment('chp.bustoday', req.body);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Bus not found' });
+    return res.status(200).json({ message: 'Bus edited successfully' });
+  } catch (error) {
+    console.error('editbustoday failed:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/removebustoday', requireRole('admin'), async (req, res) => {
+  const { id } = req.body;
+  if (!id) return res.status(400).json({ error: 'No id provided' });
+  try {
+    const result = await pool.query('DELETE FROM chp.bustoday WHERE id = $1', [id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Bus not found' });
+    return res.status(200).json({ message: 'Bus removed successfully' });
+  } catch (error) {
+    console.error('Error removing bus:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// --- Seat (passenger) management: shared helpers for seattoday & seatdriver ---
+// Insert looks up the employee by perid (chp.users) to fill name/location.
+async function chpInsertPax(table, body) {
+  const { perid, route, day, bound, time, bus_number, seat_number } = body;
+  const u = await pool.query(
+    'SELECT userid, first_name, last_name, location FROM chp.users WHERE perid = $1',
+    [perid]
+  );
+  const row = u.rows[0] || {};
+  return pool.query(
+    `INSERT INTO ${table}
+       (userid, perid, first_name, last_name, route, location, day, bound, "time", busnumber, seat)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+    [row.userid || null, perid, row.first_name || null, row.last_name || null,
+      route, row.location || null, day, bound, time,
+      parseInt(bus_number, 10), parseInt(seat_number, 10)]
+  );
+}
+
+function chpEditPax(table, body) {
+  return pool.query(
+    `UPDATE ${table} SET route = $2, busnumber = $3, seat = $4 WHERE id = $1`,
+    [body.id, body.route, parseInt(body.bus_number, 10), parseInt(body.seat_number, 10)]
+  );
+}
+
+app.get('/seattoday', requireRole('admin'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, userid, perid, first_name, last_name, route, location,
+             day, bound, "time", busnumber, seat
+      FROM chp.seattoday
+    `);
+    res.render('seattoday', { rows: result.rows });
+  } catch (err) {
+    console.error('GET /seattoday error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.get('/seattodayjson', requireRole('admin'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, userid, perid, first_name, last_name, route, location,
+             day, bound, "time", busnumber, seat
+      FROM chp.seattoday
+    `);
+    res.json({ rows: result.rows });
+  } catch (err) {
+    console.error('GET /seattodayjson error:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/insertpaxtoday', requireRole('admin'), async (req, res) => {
+  try {
+    await chpInsertPax('chp.seattoday', req.body);
+    return res.status(200).json({ message: 'Pax insert successfully' });
+  } catch (error) {
+    console.error('insertpaxtoday failed:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/editpaxtoday', requireRole('admin'), async (req, res) => {
+  try {
+    const result = await chpEditPax('chp.seattoday', req.body);
+    if (result.rowCount === 0) return res.status(404).json({ message: 'Pax not found or no changes made' });
+    return res.status(200).json({ message: 'Pax edited successfully' });
+  } catch (error) {
+    console.error('editpaxtoday failed:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/removepaxtoday', requireRole('admin'), async (req, res) => {
+  const { id } = req.body;
+  if (!id) return res.status(400).json({ error: 'No id provided' });
+  try {
+    const result = await pool.query('DELETE FROM chp.seattoday WHERE id = $1', [id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Pax id not found' });
+    return res.status(200).json({ message: 'Pax removed successfully' });
+  } catch (error) {
+    console.error('Error removing Pax:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// --- Driver-side seat list (seatdriver) ---
+app.get('/seatdriver', requireRole('admin', 'driver'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, userid, perid, first_name, last_name, route, location,
+             day, bound, "time", busnumber, seat
+      FROM chp.seatdriver
+    `);
+    res.render('seatdriver', { rows: result.rows });
+  } catch (err) {
+    console.error('GET /seatdriver error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.get('/seatdriverjson', requireRole('admin', 'driver'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, userid, perid, first_name, last_name, route, location,
+             day, bound, "time", busnumber, seat
+      FROM chp.seatdriver
+    `);
+    res.json({ rows: result.rows });
+  } catch (err) {
+    console.error('GET /seatdriverjson error:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/insertpaxdriver', requireRole('admin', 'driver'), async (req, res) => {
+  try {
+    await chpInsertPax('chp.seatdriver', req.body);
+    return res.status(200).json({ message: 'Pax insert successfully' });
+  } catch (error) {
+    console.error('insertpaxdriver failed:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/editpaxdriver', requireRole('admin', 'driver'), async (req, res) => {
+  try {
+    const result = await chpEditPax('chp.seatdriver', req.body);
+    if (result.rowCount === 0) return res.status(404).json({ message: 'Pax not found or no changes made' });
+    return res.status(200).json({ message: 'Pax edited successfully' });
+  } catch (error) {
+    console.error('editpaxdriver failed:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/removepaxdriver', requireRole('admin', 'driver'), async (req, res) => {
+  const { id } = req.body;
+  if (!id) return res.status(400).json({ error: 'No id provided' });
+  try {
+    const result = await pool.query('DELETE FROM chp.seatdriver WHERE id = $1', [id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Pax id not found' });
+    return res.status(200).json({ message: 'Pax removed successfully' });
+  } catch (error) {
+    console.error('Error removing Pax:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// --- HR-finalized views (read-only) + history ---
+app.get('/busfromhr', requireRole('admin', 'driver'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, per_id AS perid, first_name, last_name,
+             route, day, bound, "time", bus_number AS number
+      FROM chp.busfromhr
+    `);
+    res.render('busfromhr', { rows: result.rows });
+  } catch (err) {
+    console.error('GET /busfromhr error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.get('/seatfromhr', requireRole('admin', 'driver'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, userid, perid, first_name, last_name, route, location,
+             day, bound, "time", busnumber, seat
+      FROM chp.seatfromhr
+    `);
+    res.render('seatfromhr', { rows: result.rows });
+  } catch (err) {
+    console.error('GET /seatfromhr error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+// History pages mirror Gateway behaviour: they display the HR-finalized
+// chp.busfromhr / chp.seatfromhr tables (and reuse busfromhr.js / seatfromhr.js).
+app.get('/bushistory', requireRole('admin'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, per_id AS perid, first_name, last_name,
+             route, day, bound, "time", bus_number AS number
+      FROM chp.busfromhr
+    `);
+    res.render('bushistory', { rows: result.rows });
+  } catch (err) {
+    console.error('GET /bushistory error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.get('/seathistory', requireRole('admin'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, userid, perid, first_name, last_name, route, location,
+             day, bound, "time", busnumber, seat
+      FROM chp.seatfromhr
+    `);
+    res.render('seathistory', { rows: result.rows });
+  } catch (err) {
+    console.error('GET /seathistory error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+// --- HR finalize: notify each driver with their pax manifest, copy
+// bustoday/seattoday into busfromhr/seatfromhr, then clear the working tables.
+app.post('/sendmsgtodriver', requireRole('admin'), async (req, res) => {
+  try {
+    const bustoday = (await pool.query('SELECT * FROM chp.bustoday')).rows;
+    const seattoday = (await pool.query('SELECT * FROM chp.seattoday')).rows;
+
+    const dayTH = { monday: 'จันทร์', tuesday: 'อังคาร', wednesday: 'พุธ', thursday: 'พฤหัสบดี', friday: 'ศุกร์', saturday: 'เสาร์', sunday: 'อาทิตย์' };
+    const boundTH = { inbound: 'ขาเข้าโรงงาน', outbound: 'ขาออกโรงงาน' };
+
+    for (const bus of bustoday) {
+      if (!bus.driver_user_id) continue;
+      const pointCounts = {};
+      const paxDetails = {};
+      for (const s of seattoday) {
+        if (bus.route === s.route && bus.day === s.day && bus.time === s.time
+            && bus.bus_number === s.busnumber && bus.bound === s.bound) {
+          const point = s.location;
+          pointCounts[point] = (pointCounts[point] || 0) + 1;
+          if (!paxDetails[point]) paxDetails[point] = [];
+          paxDetails[point].push(`${s.first_name} ${s.perid},${s.seat}`);
+        }
+      }
+      let text = 'จุดรับ\n\n';
+      let total = 0;
+      for (const point in pointCounts) {
+        text += `จุด ${point} จำนวน ${pointCounts[point]} คน\n`;
+        paxDetails[point].forEach((p) => { text += `${p}\n`; });
+        text += '\n';
+        total += pointCounts[point];
+      }
+      text += `\nรวมทั้งสิ้น ${total} คน `;
+      await sendPushMessage([bus.driver_user_id],
+        `คุณ ${bus.first_name} ${bus.last_name} \nทะเบียน ${bus.per_id} \nสาย ${bus.route} (คันที่ ${bus.bus_number}) \nวัน ${dayTH[bus.day]} ${boundTH[bus.bound]} เวลา ${bus.time} \n\n${text}`);
+    }
+
+    await chpTransferBustodayToBusfromhr();
+    await chpTransferSeattodayToSeatfromhr();
+    await pool.query('DELETE FROM chp.bustoday');
+    await pool.query('DELETE FROM chp.seattoday');
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /sendmsgtodriver error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- CHP route derivation from a user's pickup point ---
 // Mirrors fillsheetwhenuserbooknextweek() in the Apps Script: the user's
 // stored "point" (e.g. "[09]ดงน้อย โลตัส เกาะขนุน") drives the route name

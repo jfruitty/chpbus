@@ -17,10 +17,14 @@
                     <!--<img src="/path/to/logo.png" alt="Company Logo"> -->
                 </div>
                 <ul class="menu">
-                    <li class="active"><a href="/driver">Driver</a></li>
-                    <li><a href="/seatdriver">Seat</a></li>
-                    <li><a href="/busfromhr">BusfromHr</a></li>
-                    <li><a href="/seatfromhr">SeatfromHr</a></li>
+                    <li ><a href="/member">Member</a></li>
+                    <li><a href="/thisweekdashboard">Thisweek</a></li>
+                    <li><a href="/nextweekdashboard">Nextweek</a></li>
+                    <li><a href="/sumthisweek">Sumthisweek</a></li>
+                    <li class="active"><a href="/bustoday">Bus</a></li>
+                    <li><a href="/seattoday">Seat</a></li>
+                    <li><a href="/bushistory">Bus History</a></li>
+          <li><a href="/seathistory">Seat History</a></li>
                 </ul>
             </div>
             <div class="footer">
@@ -41,18 +45,17 @@
                 </div>
             </header>
             <section class="filter-bar">
-
                 <input type="text" placeholder="สายรถ">
                 <input type="text" placeholder="วัน">
                 <input type="text" placeholder="ขา">
                 <input type="text" placeholder="เวลา">
                 <button class="add-btn">เพิ่มรถ</button>
                 <button id="downloadCsvButton">Download File</button>
-                <button class="send-btn" id="send-btn">ส่ง Hr</button>
-
+                <button class="send-btn" id="send-btn">ส่งข้อความ</button>
+                
             </section>
             <section class="table-section">
-                <table class="approval-table">
+                 <table class="approval-table">
                     <thead>
                         <tr>
                             <th>ลำดับ</th>
@@ -74,15 +77,14 @@
                 </table>
                 <div class="footer-table">
                     <div>
-
+                     
                     </div>
                     <div class="results">
                         <span>1 result(s)</span>
-
+                       
                     </div>
 
                 </div>
-
                 <div id="deleteModal" class="modal">
                     <div class="modal-content">
                         <p>กรุณายืนยันว่าต้องการลบรถรอบนี้ ใช่หรือไม่?</p>
@@ -125,7 +127,7 @@
                         </form>
                     </div>
                 </div>
-
+                
 
                 <div id="insertformModal" class="modal modal-pretty">
                     <div class="modal-content">
@@ -201,9 +203,8 @@
             </section>
         </main>
     </div>
-
     <script src="/js/picker.js"></script>
-    <script src="/js/driver.js"></script>
+    <script src="/js/bustoday.js"></script>
 </body>
 
 </html>

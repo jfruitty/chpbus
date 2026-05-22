@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>This week Summary</title>
+    <link href="/css/thisweekdashboard.css" rel="stylesheet" type="text/css">
+</head>
+
+<body>
+    <div class="container">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <!--<img src="/path/to/logo.png" alt="Company Logo"> -->
+                </div>
+                <ul class="menu">
+                    <li><a href="/member">Member</a></li>
+                    <li><a href="/thisweekdashboard">Thisweek</a></li>
+                    <li><a href="/nextweekdashboard">Nextweek</a></li>
+                    <li class="active"><a href="/sumthisweek">Sumthisweek</a></li>
+                    <li><a href="/bustoday">Bus</a></li>
+                    <li><a href="/seattoday">Seat</a></li>
+                    <li><a href="/bushistory">Bus History</a></li>
+          <li><a href="/seathistory">Seat History</a></li>
+                </ul>
+            </div>
+            <div class="footer">
+                <div class="company-info">
+                    <p>Resonac</p>
+                    <p>CHP</p>
+                </div>
+                <a href="/logout" style="display:block;margin-top:12px;padding:8px 12px;background:#ef4444;color:#fff;text-decoration:none;border-radius:6px;font-size:13px;text-align:center;">ออกจากระบบ</a>
+            </div>
+        </nav>
+        <main class="main-content">
+            <header class="header">
+                <div class="user-info">
+                    <!-- <img src="/path/to/user-avatar.png" alt="User Avatar"> -->
+                    <span>CHP Shuttle Bus</span>
+                </div>
+                <div class="actions">
+                </div>
+            </header>
+            
+            <section class="table-section">
+                <table class="approval-table">
+                    <thead>
+                        <tr>
+                            <th>สายรถ</th>
+                            <th>🟡 07:30</th>
+                            <th>🟡 19:30</th>
+                            <th>🟡 05:15</th>
+                            <th>🟡 08:15</th>
+                            <th>🟡 10:30</th>
+                            <th>🟡 17:15</th>
+                            <th>🟡 20:15</th>
+                            <th>🌸 07:30</th>
+                            <th>🌸 19:30</th>
+                            <th>🌸 05:15</th>
+                            <th>🌸 08:15</th>
+                            <th>🌸 10:30</th>
+                            <th>🌸 17:15</th>
+                            <th>🌸 20:15</th>
+                            <th>🟢 07:30</th>
+                            <th>🟢 19:30</th>
+                            <th>🟢 05:15</th>
+                            <th>🟢 08:15</th>
+                            <th>🟢 10:30</th>
+                            <th>🟢 17:15</th>
+                            <th>🟢 20:15</th>
+                            <th>🟠 07:30</th>
+                            <th>🟠 19:30</th>
+                            <th>🟠 05:15</th>
+                            <th>🟠 08:15</th>
+                            <th>🟠 10:30</th>
+                            <th>🟠 17:15</th>
+                            <th>🟠 20:15</th>
+                            <th>🔵 07:30</th>
+                            <th>🔵 19:30</th>
+                            <th>🔵 05:15</th>
+                            <th>🔵 08:15</th>
+                            <th>🔵 10:30</th>
+                            <th>🔵 17:15</th>
+                            <th>🔵 20:15</th>
+                            <th>🟣 07:30</th>
+                            <th>🟣 19:30</th>
+                            <th>🟣 05:15</th>
+                            <th>🟣 08:15</th>
+                            <th>🟣 10:30</th>
+                            <th>🟣 17:15</th>
+                            <th>🟣 20:15</th>
+                            <th>🔴 07:30</th>
+                            <th>🔴 19:30</th>
+                            <th>🔴 05:15</th>
+                            <th>🔴 08:15</th>
+                            <th>🔴 10:30</th>
+                            <th>🔴 17:15</th>
+                            <th>🔴 20:15</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% rows.forEach((row, index)=> { %>
+                            <tr>
+                                <td>
+                                    <%= row.name %>
+                                </td>
+                                <td>
+                                    <%= count[row.name]?.['monday']?.inbound?.['07:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['monday']?.inbound?.['19:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['monday']?.outbound?.['05:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['monday']?.outbound?.['08:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['monday']?.inbound?.['10:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['monday']?.outbound?.['17:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['monday']?.outbound?.['20:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['tuesday']?.inbound?.['07:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['tuesday']?.inbound?.['19:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['tuesday']?.outbound?.['05:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['tuesday']?.outbound?.['08:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['tuesday']?.inbound?.['10:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['tuesday']?.outbound?.['17:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['tuesday']?.outbound?.['20:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['wednesday']?.inbound?.['07:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['wednesday']?.inbound?.['19:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['wednesday']?.outbound?.['05:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['wednesday']?.outbound?.['08:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['wednesday']?.inbound?.['10:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['wednesday']?.outbound?.['17:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['wednesday']?.outbound?.['20:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['thursday']?.inbound?.['07:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['thursday']?.inbound?.['19:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['thursday']?.outbound?.['05:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['thursday']?.outbound?.['08:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['thursday']?.inbound?.['10:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['thursday']?.outbound?.['17:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['thursday']?.outbound?.['20:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['friday']?.inbound?.['07:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['friday']?.inbound?.['19:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['friday']?.outbound?.['05:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['friday']?.outbound?.['08:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['friday']?.inbound?.['10:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['friday']?.outbound?.['17:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['friday']?.outbound?.['20:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['saturday']?.inbound?.['07:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['saturday']?.inbound?.['19:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['saturday']?.outbound?.['05:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['saturday']?.outbound?.['08:15'] ?? 0 %>
+                                  </td>
+                                   <td>
+                                    <%= count[row.name]?.['saturday']?.inbound?.['10:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['saturday']?.outbound?.['17:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['saturday']?.outbound?.['20:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['sunday']?.inbound?.['07:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['sunday']?.inbound?.['19:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['sunday']?.outbound?.['05:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['sunday']?.outbound?.['08:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['sunday']?.inbound?.['10:30'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['sunday']?.outbound?.['17:15'] ?? 0 %>
+                                  </td>
+                                  <td>
+                                    <%= count[row.name]?.['sunday']?.outbound?.['20:15'] ?? 0 %>
+                                  </td>
+                                  
+                            </tr>
+                            <% }) %>
+                    </tbody>
+                </table>
+            </section>
+        </main>
+    </div>
+
+    <script src="/js/sum.js"></script>
+</body>
+
+</html>

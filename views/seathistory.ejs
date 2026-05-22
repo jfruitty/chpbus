@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Driver</title>
+    <link href="/css/driver.css" rel="stylesheet" type="text/css">
+</head>
+
+<body>
+    <div class="container">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <!--<img src="/path/to/logo.png" alt="Company Logo"> -->
+                </div>
+                <ul class="menu">
+                    <li ><a href="/member">Member</a></li>
+                    <li><a href="/thisweekdashboard">Thisweek</a></li>
+                    <li><a href="/nextweekdashboard">Nextweek</a></li>
+                    <li><a href="/sumthisweek">Sumthisweek</a></li>
+                    <li><a href="/bustoday">Bus</a></li>
+                    <li><a href="/seattoday">Seat</a></li>
+                    <li><a href="/bushistory">Bus History</a></li>
+                    <li class="active"><a href="/seathistory">Seat History</a></li>
+                </ul>
+            </div>
+            <div class="footer">
+                <div class="company-info">
+                    <p>Resonac</p>
+                    <p>CHP</p>
+                </div>
+                <a href="/logout" style="display:block;margin-top:12px;padding:8px 12px;background:#ef4444;color:#fff;text-decoration:none;border-radius:6px;font-size:13px;text-align:center;">ออกจากระบบ</a>
+            </div>
+        </nav>
+        <main class="main-content">
+            <header class="header">
+                <div class="user-info">
+                    <span>CHP Shuttle Bus</span>
+                </div>
+                <div class="actions">
+                </div>
+            </header>
+            <section class="filter-bar">
+
+                <input type="text" placeholder="สายรถ">
+                <input type="text" placeholder="วัน">
+                <input type="text" placeholder="ขา">
+                <input type="text" placeholder="เวลา">
+                <button id="downloadCsvButton">Download File</button>
+            </section>
+            <section class="table-section">
+                <table class="approval-table">
+                    <thead>
+                        <tr>
+                            <th>ลำดับ</th>
+                            <th>รหัส</th>
+                            <th>ชื่อ สกุล</th>
+                            <th>สายรถ</th>
+                            <th>จุดขึ้นรถ</th>
+                            <th>วัน</th>
+                            <th>ขา</th>
+                            <th>เวลา</th>
+                            <th>คันที่</th>
+                            <th>ที่นั่ง</th>
+                        
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% rows.forEach((row, index)=> { %>
+                            <tr>
+                                <td>
+                                    <%= index + 1 %>
+                                </td>
+                                <td>
+                                    <%= row.perid %>
+                                </td>
+                                <td>
+                                    <%= row.first_name %>  <%= row.last_name %>
+                                </td>
+                                <td>
+                                    <%= row.route %>
+                                </td>
+                                <td>
+                                    <%= row.location %>
+                                </td>
+                                <td>
+                                    <%= row.day %>
+                                </td>
+                                <td>
+                                    <%= row.bound %>
+                                </td>
+                                <td>
+                                    <%= row.time %>
+                                </td>
+                                <td>
+                                    <%= row.busnumber %>
+                                </td>
+                                <td>
+                                    <%= row.seat %>
+                                </td>
+                           
+
+                            </tr>
+                            <% }) %>
+                    </tbody>
+                </table>
+                <div class="footer-table">
+                    <div>
+                    
+                    </div>
+                    <div class="results">
+                        <span>1 result(s)</span>
+                    </div>
+
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="/js/seatfromhr.js"></script>
+</body>
+
+</html>
