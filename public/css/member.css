@@ -1,0 +1,189 @@
+/*
+ * member.css — visual polish for the /member page only.
+ *
+ * Loaded AFTER dashboard.css in views/member.ejs so its rules win on
+ * overlapping selectors. Anything in here is scoped to the member
+ * page so changes can't leak to thisweekdashboard / nextweekdashboard
+ * etc. (which also link dashboard.css).
+ *
+ * The markup tweaks needed for these styles to work are documented
+ * inline below — every selector that depends on a markup change is
+ * marked with "needs:".
+ */
+
+/* ---------- header ---------- */
+
+/*
+ * needs: header > .user-info contains <h1.page-title> + <p.page-subtitle>
+ *        header > .actions   contains <span.member-count>
+ *
+ * dashboard.css sets `.user-info { display: flex; align-items: center }`
+ * which lays out children in a row — we override to a vertical stack
+ * so the title sits above its subtitle.
+ */
+.user-info {
+  flex-direction: column;
+  align-items: flex-start !important;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.page-subtitle {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--slate-500);
+}
+
+.member-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  background: var(--blue-200);
+  color: var(--blue-500);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---------- filter bar as a search card ---------- */
+
+/*
+ * Wrap the existing filter inputs in a soft white card so they
+ * read as a single search panel, not loose elements on the page.
+ * `gap` + `flex-wrap` mean we can drop the per-input margin-right
+ * and the row reflows on narrow screens.
+ */
+.filter-bar {
+  background: #fff;
+  border: 1px solid var(--slate-200);
+  border-radius: 12px;
+  padding: 14px 16px;
+  gap: 10px;
+  flex-wrap: wrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.filter-bar input[type='text'],
+.filter-bar select {
+  margin-right: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--slate-200);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 14px;
+  color: var(--slate-600);
+}
+
+.filter-bar input[type='text']:focus,
+.filter-bar select:focus {
+  outline: none;
+  border-color: var(--light-blue);
+}
+
+.filter-bar .apply-btn {
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-weight: 600;
+}
+
+/* ---------- table ---------- */
+
+.table-section {
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  /* clip the rounded corners over the inner thead/tbody background */
+  overflow: hidden;
+}
+
+.approval-table {
+  margin-bottom: 0;
+}
+
+/*
+ * Sticky header: the surrounding `.main-content` already has
+ * `overflow-y: auto`, so position: sticky pins the row to the top
+ * of the scroll container as the user scrolls long member lists.
+ */
+.approval-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 12px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--slate-500);
+  background: var(--slate-100);
+  border-bottom: 1px solid var(--slate-200);
+}
+
+.approval-table td {
+  padding: 12px 14px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--slate-200);
+  vertical-align: middle;
+  color: var(--slate-600);
+}
+
+.approval-table tbody tr:nth-child(odd) {
+  background: #fafbfc;
+}
+
+.approval-table tbody tr:hover {
+  background: #eef5ff;
+}
+
+.approval-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ---------- in-cell selects ---------- */
+
+/*
+ * Both the department and status selects sit inside table cells.
+ * We give them a pill shape and lean on the existing colour classes
+ * from dashboard.css for status (.approved / .pending / .reject).
+ */
+.approval-table select {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.approval-table select.user-department {
+  background: var(--slate-100);
+  color: var(--slate-600);
+  border: 1px solid var(--slate-200);
+  max-width: 180px;
+}
+
+.approval-table select.user-department:hover {
+  border-color: var(--light-blue);
+}
+
+.approval-table select.approval-status {
+  font-weight: 600;
+}
+
+/* ---------- table footer ---------- */
+
+.footer-table {
+  padding: 12px 16px;
+  border-top: 1px solid var(--slate-200);
+  background: #fafbfc;
+}
+
+.footer-table .pagination,
+.footer-table .results {
+  margin-bottom: 0;
+  padding-bottom: 0;
+}

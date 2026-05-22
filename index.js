@@ -370,7 +370,10 @@ async function chpTransferSeattodayToSeatfromhr() {
 
 // --- Web auth routes ---
 app.get('/', (req, res) => {
-  res.render('index', { title: 'CHP Shuttle Bus' });
+  // Entry point: send everyone to /login. If already authenticated, the
+  // /login handler bounces them on to their dashboard (admin → /member,
+  // driver → /driver).
+  res.redirect('/login');
 });
 
 app.get('/login', (req, res) => {
@@ -404,6 +407,187 @@ app.post('/login', (req, res) => {
 app.get('/logout', (req, res) => {
   res.clearCookie(AUTH_COOKIE);
   res.redirect('/login');
+});
+
+// --- Admin "Member" dashboard (post-login landing for admin) ---
+// Ported from the old Gateway /member; reads chp.users instead of
+// gateway.users (same columns). The view (member.ejs) drives approval
+// and department edits via the two POST endpoints below.
+app.get('/member', requireRole('admin'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT *
+      FROM chp.users
+      ORDER BY
+        CASE WHEN approvalstatus = 'pending' THEN 0 ELSE 1 END,
+        location
+    `);
+    res.render('member', { rows: result.rows });
+  } catch (err) {
+    console.error('GET /member error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.post('/update-approval-status', requireRole('admin'), async (req, res) => {
+  const { userId, status } = req.body;
+  try {
+    await pool.query('UPDATE chp.users SET approvalstatus = $1 WHERE userid = $2', [status, userId]);
+    res.status(200).send('Approval status updated successfully');
+  } catch (error) {
+    console.error('Error updating approval status:', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.post('/update-user-department', requireRole('admin'), async (req, res) => {
+  const { userId, department } = req.body;
+  if (!userId || typeof department !== 'string' || department.trim() === '') {
+    return res.status(400).send('Invalid userId or department');
+  }
+  try {
+    await pool.query('UPDATE chp.users SET department = $1 WHERE userid = $2', [department, userId]);
+    res.status(200).send('User department updated successfully');
+  } catch (error) {
+    console.error('Error updating user department:', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+// --- Driver "Driver" dashboard (post-login landing for driver) ---
+// Ported from the old Gateway /driver; reads/writes chp.driver (the system
+// proposal table) and joins chp.seatdriver for the per-bus passenger count.
+// driver.js (+ picker.js) drive the insert/edit/delete modals and the
+// "ส่ง HR" button (POST /driversendtohr, already defined below).
+app.get('/driver', requireRole('admin', 'driver'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, per_id AS perid, first_name, last_name,
+             route, day, bound, "time", bus_number AS number
+      FROM chp.driver
+    `);
+    res.render('driver', { rows: result.rows });
+  } catch (err) {
+    console.error('GET /driver error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.get('/driverjson', requireRole('admin', 'driver'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT b.id, b.per_id AS perid, b.first_name, b.last_name,
+             b.route, b.day, b.bound, b."time", b.bus_number AS number,
+             COUNT(s.id) AS pax
+      FROM chp.driver b
+      LEFT JOIN chp.seatdriver s
+        ON  b.route      = s.route
+        AND b.day        = s.day
+        AND b.bound      = s.bound
+        AND b."time"     = s."time"
+        AND b.bus_number = s.busnumber
+      GROUP BY b.id, b.per_id, b.first_name, b.last_name,
+               b.route, b.day, b.bound, b."time", b.bus_number
+    `);
+    res.json({ rows: result.rows });
+  } catch (err) {
+    console.error('GET /driverjson error:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.get('/driverusersjson', requireRole('admin', 'driver'), async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT userid, perid, first_name, last_name
+      FROM chp.users
+      WHERE department = 'Driver'
+      ORDER BY first_name, last_name
+    `);
+    res.json({ rows: result.rows });
+  } catch (err) {
+    console.error('GET /driverusersjson error:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// chp.driver insert/edit share a column shape; keep these helpers thin.
+// `table` is a hard-coded constant at every call site — never user input.
+function chpInsertBusAssignment(table, body) {
+  const sql = `
+    INSERT INTO ${table} (
+      driver_user_id, per_id, first_name, last_name, route, day, bound, "time", bus_number
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING id
+  `;
+  return pool.query(sql, [
+    body.driver_user_id || null,
+    body.perid          || null,
+    body.first_name     || null,
+    body.last_name      || null,
+    body.route,
+    body.day,
+    body.bound,
+    body.time,
+    body.bus_number,
+  ]);
+}
+
+// COALESCE preserves stored values when the edit modal leaves the driver
+// dropdown on its placeholder (picker sends nulls for un-touched fields).
+function chpEditBusAssignment(table, body) {
+  const sql = `
+    UPDATE ${table}
+    SET first_name     = COALESCE($1, first_name),
+        last_name      = COALESCE($2, last_name),
+        per_id         = COALESCE($3, per_id),
+        route          = COALESCE($4, route),
+        driver_user_id = COALESCE($5, driver_user_id)
+    WHERE id = $6
+  `;
+  return pool.query(sql, [
+    body.first_name     || null,
+    body.last_name      || null,
+    body.perid          || null,
+    body.route          || null,
+    body.driver_user_id || null,
+    body.id,
+  ]);
+}
+
+app.post('/insertbusdriver', requireRole('admin', 'driver'), async (req, res) => {
+  try {
+    await chpInsertBusAssignment('chp.driver', req.body);
+    return res.status(200).json({ message: 'Bus insert successfully' });
+  } catch (error) {
+    console.error('insertbusdriver failed:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/editbusdriver', requireRole('admin', 'driver'), async (req, res) => {
+  if (!req.body.id) return res.status(400).json({ error: 'No id provided' });
+  try {
+    const result = await chpEditBusAssignment('chp.driver', req.body);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Bus not found' });
+    return res.status(200).json({ message: 'Bus edited successfully' });
+  } catch (error) {
+    console.error('editbusdriver failed:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/removebusdriver', requireRole('admin', 'driver'), async (req, res) => {
+  const { id } = req.body;
+  if (!id) return res.status(400).json({ error: 'No id provided' });
+  try {
+    const result = await pool.query('DELETE FROM chp.driver WHERE id = $1', [id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Bus not found' });
+    return res.status(200).json({ message: 'Bus removed successfully' });
+  } catch (error) {
+    console.error('Error removing bus:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
 });
 
 // --- CHP route derivation from a user's pickup point ---

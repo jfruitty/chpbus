@@ -1,0 +1,255 @@
+/* styles.css */
+
+:root {
+  --light-blue: #4a8cf7;
+  --blue-200: #bfdbfe;
+  --blue-500: #004db3;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-300: #CBD5E1;
+  --slate-500: #64748b;
+  --curlcurl7: 7px;
+  --success: #16c75f;
+  --success-light: #e9fff2;
+  --cancel-light: #ffe9e9;
+  --cancel: #ff4d4f;
+  --waiting: #ff7608;
+  --waiting-light: #ffe6d3;
+  --slate-600: #475569;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f5f5f5;
+}
+
+.container {
+  display: flex;
+  height: 100vh;
+}
+
+.sidebar {
+  width: 250px;
+  background-color: #f8fbff;
+  color: white;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding-inline: 22px;
+}
+
+.logo{
+  min-height: 50%;
+}
+
+.logo img {
+  width: 100%;
+  height: auto;
+ 
+}
+
+.menu {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.menu li {
+  padding: 15px 20px;
+  border-radius: 10px;
+}
+
+.menu li a {
+  color: var(--slate-500);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.menu li.active {
+  background-color: var(--light-blue);
+  box-shadow: 0px 4px 10px 0px #1d5cff80;
+}
+
+li.active a {
+  color: white;
+}
+
+.footer {
+  padding: 20px;
+  text-align: center;
+  color: var(--slate-500);
+}
+
+.company-info p {
+  margin: 5px 0;
+}
+
+.main-content {
+  /* flex-grow: 1; */
+  width: 1250px;
+  padding: 20px;
+  background-color: white;
+  overflow-y: auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+}
+
+.user-info img {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  margin-right: 10px;
+}
+
+.actions .action-btn {
+  margin-left: 10px;
+  padding: 10px 15px;
+  background-color: var(--light-blue);
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.filter-bar input[type='text'],
+.filter-bar input[type='date'],
+.filter-bar select {
+  margin-right: 10px;
+  padding: 10px;
+  border-radius: var(--curlcurl7);
+  border: 1px solid var(--slate-200);
+}
+
+.filter-bar input[type='text']::placeholder {
+  color: var(--slate-300)
+}
+
+
+.filter-bar .filter-btn,
+.filter-bar .apply-btn {
+  padding: 10px 15px;
+  background-color: var(--light-blue);
+  border-radius: 10px;
+  color: white;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0px 4px 10px 0px #1d5cff80;
+}
+
+.table-section {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  color: var(--slate-600);
+}
+
+.approval-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+}
+
+.approval-table th,
+.approval-table td {
+  height: 40px;
+  padding: 5px;
+  text-align: left;
+}
+
+.approval-table th {
+  background-color: var(--slate-100);
+  border-bottom: 1px solid var(--slate-200);
+  color: var(--slate-500);
+}
+
+.approval-table tr:hover {
+  background-color: #f1f1f1;
+}
+
+.approval-table select {
+  padding: 5px;
+  border-radius: 4px;
+}
+
+.footer-table{
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  gap: 10px;
+}
+
+.pagination button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 20px;
+  height: 20px;
+  background-color: var(--blue-200);
+  color: var(--blue-500);
+  font-size: 1rem;
+  font-weight: bolder;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.pagination button:disabled {
+  background-color: #bdc3c7;
+}
+
+.results{
+  display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 20px;
+    margin-right: 20px;
+    padding-bottom: 10px;
+    gap: 10px;
+}
+
+.approval-status {
+  border: none;
+}
+
+.approved {
+  color: var(--success, #16c75f);
+  background-color: var(--success-light, #e9fff2);
+}
+
+.pending {
+  background: var(--waiting-light, #ffe6d3);
+  color: var(--waiting, #ff7608);
+}
+
+.reject {
+  color: var(--cancel);
+  background-color: var(--cancel-light);
+}
+
+
+

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Driver</title>
+    <link href="/css/driver.css" rel="stylesheet" type="text/css">
+    <link href="/css/modal-form.css" rel="stylesheet" type="text/css">
+</head>
+
+<body>
+    <div class="container">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <!--<img src="/path/to/logo.png" alt="Company Logo"> -->
+                </div>
+                <ul class="menu">
+                    <li class="active"><a href="/driver">Driver</a></li>
+                    <li><a href="/member">Member</a></li>
+                </ul>
+            </div>
+            <div class="footer">
+                <div class="company-info">
+                    <p>Resonac</p>
+                    <p>CHP</p>
+                </div>
+                <a href="/logout" style="display:block;margin-top:12px;padding:8px 12px;background:#ef4444;color:#fff;text-decoration:none;border-radius:6px;font-size:13px;text-align:center;">ออกจากระบบ</a>
+            </div>
+        </nav>
+        <main class="main-content">
+            <header class="header">
+                <div class="user-info">
+                    <span>CHP Shuttle Bus</span>
+                </div>
+                <div class="cost">
+                    <span>รวมค่าใช้จ่าย 0</span>
+                </div>
+            </header>
+            <section class="filter-bar">
+
+                <input type="text" placeholder="สายรถ">
+                <input type="text" placeholder="วัน">
+                <input type="text" placeholder="ขา">
+                <input type="text" placeholder="เวลา">
+                <button class="add-btn">เพิ่มรถ</button>
+                <button id="downloadCsvButton">Download File</button>
+                <button class="send-btn" id="send-btn">ส่ง Hr</button>
+
+            </section>
+            <section class="table-section">
+                <table class="approval-table">
+                    <thead>
+                        <tr>
+                            <th>ลำดับ</th>
+                            <th>ทะเบียนรถ</th>
+                            <th>ชื่อ สกุล</th>
+                            <th>สายรถ</th>
+                            <th>วัน</th>
+                            <th>ขา</th>
+                            <th>เวลา</th>
+                            <th>คันที่</th>
+                            <th>ผดส</th>
+                            <th></th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="busTableBody">
+                        <!-- Rows will be dynamically inserted here by JavaScript -->
+                    </tbody>
+                </table>
+                <div class="footer-table">
+                    <div>
+
+                    </div>
+                    <div class="results">
+                        <span>1 result(s)</span>
+
+                    </div>
+
+                </div>
+
+                <div id="deleteModal" class="modal">
+                    <div class="modal-content">
+                        <p>กรุณายืนยันว่าต้องการลบรถรอบนี้ ใช่หรือไม่?</p>
+                        <button id="confirm-yes">ใช่</button>
+                        <button id="confirm-no">ไม่</button>
+                    </div>
+                </div>
+                <!-- The Modal -->
+                <div id="editformModal" class="modal modal-pretty">
+                    <div class="modal-content">
+                        <span class="close">&times;</span>
+                        <h2>Bus Edit</h2>
+                        <form id="busEditForm" class="form-modal">
+                            <div class="row">
+                                <label for="name">ชื่อ-สกุล (รหัสพนักงาน):</label>
+                                <select id="name" name="name">
+                                    <option value="" data-userid="">กรุณาเลือกคนขับ</option>
+                                </select>
+                            </div>
+                            <div class="row">
+                                <label for="editroute">สายรถ:</label>
+                                <select id="editroute" name="editroute">
+                                    <option value="สายสุวินทวงค์">สายสุวินทวงค์</option>
+                                    <option value="สายศรีโสธร">สายศรีโสธร</option>
+                                    <option value="สายแหล่มประดู่">สายแหล่มประดู่</option>
+                                    <option value="สายบางคล้า(หัวไทร)">สายบางคล้า(หัวไทร)</option>
+                                    <option value="สายบางคล้า(หนองครก)">สายบางคล้า(หนองครก)</option>
+                                    <option value="สายบางคล้า(วังเย็น)">สายบางคล้า(วังเย็น)</option>
+                                    <option value="สายพนมดงน้อย">สายพนมดงน้อย</option>
+                                    <option value="สายสนามชัย">สายสนามชัย</option>
+                                    <option value="สายหนองแหน">สายหนองแหน</option>
+                                    <option value="อื่นๆ">อื่นๆ</option>
+                                </select>
+                            </div>
+                            <div class="row" id="edit-other-route-row" style="display: none;">
+                                <label for="editotherroute">-</label>
+                                <input type="text" id="editotherroute" name="editotherroute" style="width: 43%;">
+                            </div>
+                            <button type="submit">Submit</button>
+                        </form>
+                    </div>
+                </div>
+
+
+                <div id="insertformModal" class="modal modal-pretty">
+                    <div class="modal-content">
+                        <span class="close">&times;</span>
+                        <h2>Bus Insert</h2>
+                        <form id="businsertForm" class="form-modal">
+                            <div class="row">
+                                <label for="insertname">ชื่อ-สกุล (รหัสพนักงาน):</label>
+                                <select id="insertname" name="insertname">
+                                    <option value="" data-userid="">กรุณาเลือกคนขับ</option>
+                                </select>
+                            </div>
+                            <div class="row">
+                                <label for="route">สายรถ:</label>
+                                <select id="route" name="route">
+                                    <option value="สายสุวินทวงค์">สายสุวินทวงค์</option>
+                                    <option value="สายศรีโสธร">สายศรีโสธร</option>
+                                    <option value="สายแหล่มประดู่">สายแหล่มประดู่</option>
+                                    <option value="สายบางคล้า(หัวไทร)">สายบางคล้า(หัวไทร)</option>
+                                    <option value="สายบางคล้า(หนองครก)">สายบางคล้า(หนองครก)</option>
+                                    <option value="สายบางคล้า(วังเย็น)">สายบางคล้า(วังเย็น)</option>
+                                    <option value="สายพนมดงน้อย">สายพนมดงน้อย</option>
+                                    <option value="สายสนามชัย">สายสนามชัย</option>
+                                    <option value="สายหนองแหน">สายหนองแหน</option>
+                                    <option value="อื่นๆ">อื่นๆ</option>
+                                </select>
+                            </div>
+                            <div class="row" id="other-route-row" style="display: none;">
+                                <label for="otherroute">-</label>
+                                <input type="text" id="otherroute" name="otherroute" style="width: 43%;">
+                            </div>
+                            <div class="row">
+                                <label for="day">วัน:</label>
+                                <select id="day" name="day">
+                                    <option value="monday">จันทร์</option>
+                                    <option value="tuesday">อังคาร</option>
+                                    <option value="wednesday">พุธ</option>
+                                    <option value="thursday">พฤหัสบดี</option>
+                                    <option value="friday">ศุกร์</option>
+                                    <option value="saturday">เสาร์</option>
+                                    <option value="sunday">อาทิตย์</option>
+                                    <!-- Add more options as needed -->
+                                </select>
+                            </div>
+                            <div class="row">
+                                <label for="bound">ขา:</label>
+                                <select id="bound" name="bound">
+                                    <option value="inbound">ขาเข้า</option>
+                                    <option value="outbound">ขาออก</option>
+                                </select>
+                            </div>
+                            <div class="row">
+                                <label for="time">เวลา:</label>
+                                <select id="time" name="time">
+                                    <option value="05:15">05:15</option>
+                                    <option value="07:30">07:30</option>
+                                    <option value="08:15">08:15</option>
+                                    <option value="10:30">10:30</option>
+                                    <option value="17:15">17:15</option>
+                                    <option value="19:30">19:30</option>
+                                    <option value="20:15">20:15</option>
+                                </select>
+                            </div>
+                            <div class="row">
+                                <label for="bus_number">คันที่:</label>
+                                <input type="number" id="bus_number" name="bus_number" style="width: 43%;">
+                            </div>
+                            <button type="submit">Submit</button>
+                        </form>
+                    </div>
+                </div>
+
+            </section>
+        </main>
+    </div>
+
+    <script src="/js/picker.js"></script>
+    <script src="/js/driver.js"></script>
+</body>
+
+</html>

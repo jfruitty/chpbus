@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Member</title>
+  <link href="/css/dashboard.css" rel="stylesheet" type="text/css">
+  <link href="/css/member.css" rel="stylesheet" type="text/css">
+</head>
+
+<body>
+  <div class="container">
+    <nav class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <!--<img src="/path/to/logo.png" alt="Company Logo"> -->
+        </div>
+        <ul class="menu">
+          <li class="active"><a href="/member">Member</a></li>
+          <li><a href="/driver">Driver</a></li>
+        </ul>
+      </div>
+      <div class="footer">
+        <div class="company-info">
+          <p>Resonac</p>
+          <p>CHP</p>
+        </div>
+        <a href="/logout" style="display:block;margin-top:12px;padding:8px 12px;background:#ef4444;color:#fff;text-decoration:none;border-radius:6px;font-size:13px;text-align:center;">ออกจากระบบ</a>
+      </div>
+    </nav>
+    <main class="main-content">
+      <header class="header">
+        <div class="user-info">
+          <h1 class="page-title">จัดการสมาชิก</h1>
+          <p class="page-subtitle">อนุมัติและจัดการข้อมูลพนักงาน</p>
+        </div>
+        <div class="actions">
+          <span class="member-count"><%= rows.length %> รายชื่อ</span>
+        </div>
+      </header>
+      <section class="filter-bar">
+        <input type="text" placeholder="เลขประจำตัว">
+        <input type="text" placeholder="ชื่อ">
+        <select class="select-department">
+          <option value="" disabled selected hidden>แผนก</option>
+          <option value="G1B HR-GA">G1B HR-GA</option>
+          <option value="G1B MT">G1B MT</option>
+          <option value="G1B PC">G1B PC</option>
+          <option value="G1B PD-BA">G1B PD-BA</option>
+          <option value="G1B PD-DP">G1B PD-DP</option>
+          <option value="G1B QAQC">G1B QAQC</option>
+          <option value="G1B Safty&Environment">G1B Safty&Environment</option>
+          <option value="G1B Sales">G1B Sales</option>
+          <option value="G1P Compacting">G1P Compacting</option>
+          <option value="G1P Finishing">G1P Finishing</option>
+          <option value="G1P HR-GA">G1P HR-GA</option>
+          <option value="G1P Inspecting & Packing">G1P Inspecting & Packing</option>
+          <option value="G1P Magna">G1P Magna</option>
+          <option value="G1P MT">G1P MT</option>
+          <option value="G1P OTS">G1P OTS</option>
+          <option value="G1P PC">G1P PC</option>
+          <option value="G1P PD">G1P PD</option>
+          <option value="G1P PD Center">G1P PD Center</option>
+          <option value="G1P PD-DP">G1P PD-DP</option>
+          <option value="G1P QA-QC">G1P QA-QC</option>
+          <option value="G1P QA-QC CHP">G1P QA-QC CHP</option>
+          <option value="G1P Rework">G1P Rework</option>
+          <option value="G1P Safty&Environment">G1P Safty&Environment</option>
+          <option value="G1P Sinter">G1P Sinter</option>
+          <option value="G1P Tooling">G1P Tooling</option>
+          <option value="Driver">Driver</option>
+          <option value="Old Driver">Old Driver</option>
+        </select>
+
+        <button class="apply-btn">ค้นหา</button>
+      </section>
+      <section class="table-section">
+        <table class="approval-table">
+          <thead>
+            <tr>
+              <th>ลำดับ</th>
+              <th>หมายเลขประจำตัว</th>
+              <th>ชื่อใน Line</th>
+              <th>ชื่อ</th>
+              <th>นามสกุล</th>
+              <th>แผนก</th>
+              <th>โรงงาน</th>
+              <th>จุดขึ้นรถ</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% rows.forEach((row, index)=> { %>
+              <tr data-userid="<%= row.userid %>">
+                <td>
+                  <%= index + 1 %>
+                </td>
+                <td>
+                  <%= row.perid %>
+                </td>
+                <td>
+                  <%= row.displayname %>
+              </td>
+                <td>
+                  <%= row.first_name %>
+                </td>
+                <td>
+                  <%= row.last_name %>
+                </td>
+                <td>
+                  <select class="user-department">
+                    <% const deptOptions = ['G1B HR-GA','G1B MT','G1B PC','G1B PD-BA','G1B PD-DP','G1B QAQC','G1B Safty&Environment','G1B Sales','G1P Compacting','G1P Finishing','G1P HR-GA','G1P Inspecting & Packing','G1P Magna','G1P MT','G1P OTS','G1P PC','G1P PD','G1P PD Center','G1P PD-DP','G1P QA-QC','G1P QA-QC CHP','G1P Rework','G1P Safty&Environment','G1P Sinter','G1P Tooling','Driver','Old Driver']; %>
+                    <% if (!deptOptions.includes(row.department)) { %>
+                      <option value="<%= row.department || '' %>" selected hidden><%= row.department || '-' %></option>
+                    <% } %>
+                    <% deptOptions.forEach(function(d){ %>
+                      <option value="<%= d %>" <%= row.department===d ? 'selected' : '' %>><%= d %></option>
+                    <% }) %>
+                  </select>
+                </td>
+                <td>
+                  <%= row.factory %>
+                </td>
+                <td>
+                  <%= row.location %>
+                </td>
+                <td>
+                  <select class="approval-status <%= row.approvalstatus %>">
+                    <option value="approved" class="approval-status approved" <%=row.approvalstatus==='approved'
+                      ? 'selected' : '' %>>✓ Approve</option>
+                    <option value="pending" class="approval-status pending" <%=row.approvalstatus==='pending'
+                      ? 'selected' : '' %>>⏲ Pending</option>
+                    <option value="reject" class="approval-status reject" <%=row.approvalstatus==='reject' ? 'selected'
+                      : '' %>>⨂ Reject</option>
+                  </select>
+                </td>
+              </tr>
+              <% }) %>
+          </tbody>
+        </table>
+        <div class="footer-table">
+          <div class="pagination">
+            <button class="prev-page">&lt;</button>
+            <span>1/10 Pages</span>
+            <button class="next-page">&gt;</button>
+          </div>
+          <div class="results">
+            <span>1 result(s)</span>
+          </div>
+
+        </div>
+
+      </section>
+    </main>
+  </div>
+  <script src="/js/member.js"></script>
+</body>
+
+</html>
