@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>
+    <%= title %>
+  </title>
+</head>
+
+<body>
+  <h1>
+    <%= title %>
+  </h1>
+  <table>
+    <thead>
+      <tr>
+        <th>รหัสพนักงาน</th>
+        <th>ชื่อ</th>
+        <th>นามสกุล</th>
+        <th>สายรถ</th>
+        <th>จุด</th>
+        <th>จันทร์</th>
+        <th>จันทร์</th>
+        <th>อังคาร</th>
+        <th>อังคาร</th>
+        <th>พุธ</th>
+        <th>พุธ</th>
+        <th>พฤหัส</th>
+        <th>พฤหัส</th>
+        <th>ศุกร์</th>
+        <th>ศุกร์</th>
+        <th>เสาร์</th>
+        <th>เสาร์</th>
+        <th>อาทิตย์</th>
+        <th>อาทิตย์</th>
+        <th></th>
+        <th>
+          <input type="checkbox" id="select-all" />
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <% data.data.forEach(function(row) { %>
+        <tr>
+          <% for (let i=0; i < 19; i++) { %>
+              <td>
+                <%= row[i] %>
+              </td>
+              <% } %>
+                <% if (row[19]==false){ %>
+                  <td>รออนุมัติ</td>
+                  <% }else{%>
+                    <td>อนุมัติแล้ว</td>
+                    <%}%>
+                      <td>
+                        <input type="checkbox" class="data-checkbox" name="approve" id="<%= row[0] %>"
+                          value="<%= row[0] %>" />
+                      </td>
+        </tr>
+        <% }) %>
+          <tr>
+            <th colspan="20">
+              <button id="submit-button">Submit</button>
+            </th>
+          </tr>
+    </tbody>
+  </table>
+
+  <script>
+
+    const data = '<% JSON.stringify(data) %>';
+
+    const selectAllCheckbox = document.getElementById('select-all');
+    const dataCheckboxes = document.querySelectorAll('.data-checkbox');
+
+    selectAllCheckbox.addEventListener('change', function () {
+      dataCheckboxes.forEach(checkbox => {
+        checkbox.checked = this.checked;
+      });
+    });
+
+    dataCheckboxes.forEach(checkbox => {
+      checkbox.addEventListener('change', function () {
+
+        if (!this.checked) {
+          selectAllCheckbox.checked = false;
+        }
+      });
+    });
+
+    const submitButton = document.getElementById('submit-button');
+
+    submitButton.addEventListener('click', async () => {
+      console.log('Clicked submit button');
+      try {
+        await submitData();
+        console.log('Data submitted successfully');
+      } catch (error) {
+        console.error('Error submitting data:', error);
+      }
+    });
+
+    async function submitData() {
+      console.log('Entering submitData function');
+      const selectedRows = [];
+      const dataCheckboxes = document.querySelectorAll('.data-checkbox:checked');
+      dataCheckboxes.forEach(checkbox => {
+        selectedRows.push(checkbox.value);
+      });
+
+      if (selectedRows.length === 0) {
+        console.log('No rows selected');
+        alert('Please select at least one row to submit.');
+        return;
+      }
+
+    
+
+      try {
+        console.log('Sending fetch request');
+        const response = await fetch('/approve', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ids: selectedRows }),
+        });
+
+        console.log('Fetch request completed');
+        if (response.ok) {
+          console.log('Data submitted successfully');
+          // You can add additional logic here, such as reloading the page or showing a success message
+          location.reload()
+        } else {
+          const errorData = await response.json();
+          console.error('Error submitting data:', errorData);
+          throw new Error(`HTTP error ${response.status}: ${errorData.message}`);
+        }
+      } catch (error) {
+        console.error('Error submitting data:', error);
+        throw error;
+      }
+    }
+
+  </script>
+
+</body>
+
+</html>

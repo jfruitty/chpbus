@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Registration Form</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link href="/css/styles.css" rel="stylesheet" type="text/css">
+    <script src="https://static.line-scdn.net/liff/edge/versions/2.13.0/sdk.js"></script>
+</head>
+
+<body>
+    <div class="loader" id="loader"></div>
+    <div class="loading-text" id="loading-text">กำลังตรวจสอบสิทธิ์...</div>
+
+    <script>
+
+        function runApp() {
+            const idToken = liff.getIDToken();
+            const accessToken = liff.getAccessToken()
+
+
+            liff.getProfile().then(profile => {
+
+                console.log('Response:', profile);
+                console.log('userid:', profile.userId);
+                console.log('accessToken:', accessToken);
+
+                var idToken = profile.userId;
+
+                fetch(`/getuserdata?accesstoken=${accessToken}`)
+                    .then(response => response.json())
+                    .then(data => {
+
+                    
+                        document.getElementById('loader').style.display = 'none';
+                        document.getElementById('loading-text').style.display = 'none';
+
+                        if (data.userData.approve == 'approved') {
+
+                            var status = 'ยืนยันตัวตนแล้ว';
+                           
+                            createProfileCard(profile.pictureUrl, profile.displayName, status);
+                      
+
+                        } else if (data.userData.approve == 'standby') {
+
+                            var status = 'รอแอดมินยืนยัน';
+                     
+                            createProfileCard(profile.pictureUrl, profile.displayName, status);
+
+                        } else {
+                          
+                            const h1 = document.createElement('h1');
+                            h1.textContent = 'Registration Form';
+
+                            const form = document.createElement('form');
+                            form.method = 'POST';
+                            form.action = '/register';
+
+                            const labePerNumber = document.createElement('label');
+                            labePerNumber.textContent = 'รหัสพนักงาน';
+                            labePerNumber.setAttribute('for', 'pernumber');
+
+                            const inputPerNumber = document.createElement('input');
+                            inputPerNumber.type = 'text';
+                            inputPerNumber.id = 'pernumber';
+                            inputPerNumber.name = 'pernumber';
+                            inputPerNumber.required = true;
+
+                            const labelName = document.createElement('label');
+                            labelName.textContent = 'ชื่อ';
+                            labelName.setAttribute('for', 'name');
+
+                            const inputName = document.createElement('input');
+                            inputName.type = 'text';
+                            inputName.id = 'name';
+                            inputName.name = 'name';
+                            inputName.required = true;
+
+                            const labelSurname = document.createElement('label');
+                            labelSurname.textContent = 'นามสกุล';
+                            labelSurname.setAttribute('for', 'surname');
+
+                            const inputSurname = document.createElement('input');
+                            inputSurname.type = 'text';
+                            inputSurname.id = 'surname';
+                            inputSurname.name = 'surname';
+                            inputSurname.required = true;
+
+                            const labelType2 = document.createElement("label");
+                            labelType2.for = "department";
+                            labelType2.innerText = "แผนก / ประเภท";
+
+                            const selectType2 = document.createElement("select");
+                            selectType2.type = "text";
+                            selectType2.id = "department";
+                            selectType2.name = "department";
+                            selectType2.required = true;
+
+                            const type2Options = ["CB-Production","CHP-GA-General Affairs","CHP-HR-HR Development","CHP-HR-Recruitment & Payroll",
+                            "CHP-MD-Maintenance","CHP-PC-Planning & Sales","CHP-PC-Warehouse","CHP-PD-Center",
+                            "CHP-PD-Compacting","CHP-PD-Finishing","CHP-PD-Forklift","CHP-PD-Inspection",
+                            "CHP-PD-Machining","CHP-PD-Packing","CHP-PD-Rework","CHP-PD-Sintering",
+                            "CHP-PE-Production Engineering","CHP-PE-Tooling","CHP-QA-Quality Assurance","CHP-QA-Quality Control",
+                            "CHP-SHE-Safety","PM-BOI & EXIM","PM-Design-Process Design","PM-Design-Tool Design",
+                            "PM-Finance & Accounting","PM-Purchasing","เจ้าหน้าที่ซัพ","Driver",
+                        
+                        ];
+                            type2Options.forEach(function (optionText) {
+                                const option = document.createElement("option");
+                                option.value = optionText;
+                                option.innerText = optionText;
+                                selectType2.appendChild(option);
+                            });
+
+
+
+                            const inputAccessToken = document.createElement('input');
+                            inputAccessToken.type = 'hidden';
+                            inputAccessToken.id = 'userAccessToken';
+                            inputAccessToken.name = 'userAccessToken';
+                            inputAccessToken.value = '';
+                            inputAccessToken.required = true;
+
+                            const inputDisplayName = document.createElement('input');
+                            inputDisplayName.type = 'hidden';
+                            inputDisplayName.id = 'displayname';
+                            inputDisplayName.name = 'displayname';
+                            inputDisplayName.value = '';
+
+                            const submitButton = document.createElement('button');
+                            submitButton.type = 'submit';
+                            submitButton.textContent = 'Submit';
+
+                            form.appendChild(labePerNumber);
+                            form.appendChild(inputPerNumber);
+
+                            form.appendChild(labelName);
+                            form.appendChild(inputName);
+
+                            form.appendChild(labelSurname);
+                            form.appendChild(inputSurname);
+
+                            form.appendChild(labelType2);
+                            form.appendChild(selectType2);
+
+                            form.appendChild(inputAccessToken);
+                            form.appendChild(inputDisplayName);
+
+                            form.appendChild(submitButton);
+
+                            document.body.appendChild(h1);
+                            document.body.appendChild(form);
+
+
+                            document.getElementById('userAccessToken').value = accessToken;
+                            document.getElementById('displayname').value = profile.displayName;
+
+
+                            form.addEventListener('submit', function (event) {
+                               
+                                event.preventDefault();
+
+                                submitButton.disabled = true;
+                                form.style.display = 'none';
+
+                                document.getElementById('loader').style.display = 'block';
+                                document.getElementById('loading-text').style.display = 'block';
+                                document.getElementById('loading-text').innerText = 'กำลังส่งฟอร์ม';
+
+                                form.submit();
+                                submitFormAsync()
+                                    .then(() => {
+                                        document.getElementById('loader').style.display = 'none';
+                                        document.getElementById('loading-text').style.display = 'none';
+                                        submitButton.disabled = false;
+                                    })
+                                    .catch((error) => {
+                                        document.getElementById('loader').style.display = 'none';
+                                        document.getElementById('loading-text').style.display = 'none';
+                                        submitButton.disabled = false;
+                                    });
+                            });
+
+
+                        }
+                    }).catch(err => console.error(err));
+            }).catch(err => console.error(err));
+
+
+        }
+
+
+
+        liff.init({ liffId: '<%= liffid %>' }, async () => {
+            if (liff.isLoggedIn()) {
+                try {
+                    const accessToken = liff.getAccessToken();
+                    const response = await fetch('/verifyaccesstoken', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ accessToken }),
+                    });
+
+                    const data = await response.json();
+                    if (data.valid) {
+                        runApp();
+                    } else {
+                        liff.logout();
+                        liff.login();
+                    }
+                } catch (error) {
+                    console.error('Error verifying access token:', error);
+                }
+            } else {
+                liff.login();
+            }
+        }).catch((err) => {
+            console.log(err.code, err.message);
+        });
+
+
+        function createProfileCard(profilepic, name, status) {
+         
+            const card = document.createElement('div');
+            card.className = 'card';
+
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
+
+            const profilePictureContainer = document.createElement('div');
+
+            const profilePicture = document.createElement('img');
+            profilePicture.src = profilepic;  
+            profilePicture.alt = 'Profile Picture';
+
+            profilePictureContainer.appendChild(profilePicture);
+
+            const cardText = document.createElement('div');
+            cardText.className = 'card-text';
+
+            const nameParagraph = document.createElement('p');
+            nameParagraph.textContent = 'ชื่อ: ' + name;
+
+
+            const statusParagraph = document.createElement('p');
+            statusParagraph.textContent = 'สถานะ: ' + status;
+
+            cardText.appendChild(nameParagraph);
+            cardText.appendChild(statusParagraph);
+
+            cardBody.appendChild(profilePictureContainer);
+            cardBody.appendChild(cardText);
+
+            card.appendChild(cardBody);
+            document.body.appendChild(card);
+        }
+
+
+
+        function submitFormAsync() {
+            return new Promise((resolve, reject) => {
+
+                setTimeout(() => {
+                    console.log('Form submitted successfully');
+                    resolve();
+
+                }, 10000);
+            });
+        }
+
+    </script>
+
+
+</body>
+
+</html>

@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Booking Thisweek</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link href="/css/styles.css" rel="stylesheet" type="text/css">
+    <script src="https://static.line-scdn.net/liff/edge/versions/2.13.0/sdk.js"></script>
+</head>
+
+<body>
+    <div class="loader" id="loader"></div>
+    <div class="loading-text" id="loading-text">กำลังตรวจสอบสิทธิ์...</div>
+
+    <script>
+
+        function runApp() {
+            const idToken = liff.getIDToken();
+            const accessToken = liff.getAccessToken()
+
+
+            liff.getProfile().then(profile => {
+
+
+                console.log('Response:', profile);
+                console.log('accessToken:', accessToken);
+
+                fetch(`/getuserdata?accesstoken=${accessToken}&page=thisweek`)
+                    .then(response => response.json())
+                    .then(data => {
+
+                        console.log(data)
+
+                        document.getElementById('loader').style.display = 'none';
+                        document.getElementById('loading-text').style.display = 'none';
+
+                        if (data.userData.approve == 'approved') {
+
+
+                            if (data.bookthisweekData.route != '') {
+
+                                createBookingCard(data.bookthisweekData, accessToken)
+
+                            } else {
+
+                                if (isouttime()) {
+
+                                    var status = 'ระบบปิดรับการจองหลัง 13:00 และวันหยุดครับ';
+
+                                    createProfileCard(profile.pictureUrl, profile.displayName, status);
+                                } else {
+
+                                    createBookingForm(data, accessToken)
+                                }
+                            }
+
+
+                        } else if (data.userData.approve == 'standby') {
+
+                            var status = 'รอแอดมินยืนยัน';
+
+                            createProfileCard(profile.pictureUrl, profile.displayName, status);
+
+                        } else {
+
+                            var status = 'กรุณาลงทะเบียน';
+
+                            createProfileCard(profile.pictureUrl, profile.displayName, status);
+
+
+
+                        }
+                    }).catch(err => console.error(err));
+            }).catch(err => console.error(err));
+
+        }
+
+        
+        liff.init({ liffId: '<%= liffid %>' }, async () => {
+            if (liff.isLoggedIn()) {
+                try {
+                    const accessToken = liff.getAccessToken();
+                    const response = await fetch('/verifyaccesstoken', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ accessToken }),
+                    });
+
+                    const data = await response.json();
+                    if (data.valid) {
+                        runApp();
+                    } else {
+                        liff.logout();
+                        liff.login();
+                    }
+                } catch (error) {
+                    console.error('Error verifying access token:', error);
+                }
+            } else {
+                liff.login();
+            }
+        }).catch((err) => {
+            console.log(err.code, err.message);
+        });
+
+
+        function createProfileCard(profilepic, name, status) {
+
+            const card = document.createElement('div');
+            card.className = 'card';
+
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
+
+            const profilePictureContainer = document.createElement('div');
+
+            const profilePicture = document.createElement('img');
+            profilePicture.src = profilepic;
+            profilePicture.alt = 'Profile Picture';
+
+            profilePictureContainer.appendChild(profilePicture);
+
+            const cardText = document.createElement('div');
+            cardText.className = 'card-text';
+
+            const nameParagraph = document.createElement('p');
+            nameParagraph.textContent = 'ชื่อ: ' + name;
+
+
+            const statusParagraph = document.createElement('p');
+            statusParagraph.textContent = 'สถานะ: ' + status;
+
+            cardText.appendChild(nameParagraph);
+            cardText.appendChild(statusParagraph);
+
+            cardBody.appendChild(profilePictureContainer);
+            cardBody.appendChild(cardText);
+
+            card.appendChild(cardBody);
+            document.body.appendChild(card);
+        }
+
+        function createBookingCard(data, accessToken) {
+
+            const card = document.createElement('div');
+            card.className = 'booking-card';
+
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
+
+
+            const bookingDetails = document.createElement('div');
+            bookingDetails.className = 'booking-details';
+
+            const statusParagraph = document.createElement('h2');
+            //statusParagraph.textContent = `สถานะ : ${data.booknextweekData.approve}`;
+            statusParagraph.textContent = `สถานะ : Approve`;
+            statusParagraph.style.textAlign = "center";
+
+            bookingDetails.appendChild(statusParagraph);
+
+            const routeParagraph = document.createElement('p');
+            routeParagraph.textContent = `🚌 สายรถ  ${data.route}`;
+            routeParagraph.style = "text-align: center; margin-bottom: 20px;";
+
+
+            bookingDetails.appendChild(routeParagraph);
+
+            const dayParagraphs = ['🟡 Monday(in)', '🟡 Monday(out)',
+                '🌸 Tuesday(in)', '🌸 Tuesday(out)',
+                '🟢 Wednesday(in)', '🟢 Wednesday(out)',
+                '🟠 Thursday(in)', '🟠 Thursday(out)',
+                '🔵 Friday(in)', '🔵 Friday(out)',
+                '🟣 Saturday(in)', '🟣 Saturday(out)',
+                '🔴 Sunday(in)', '🔴 Sunday(out)'].map(day => {
+                    const daydiv = document.createElement('div');
+                    const dayh = document.createElement('div');
+                    const dayp = document.createElement('div');
+                    dayh.textContent = `${day}: `;
+                    dayp.textContent = `${data[`${day.substring(3).toLowerCase()}`]}`; // emoji = 2 char
+                    daydiv.appendChild(dayh);
+                    daydiv.appendChild(dayp);
+                    daydiv.style = "display: flex; justify-content: space-between; margin-bottom: 10px; width: 80%; margin-inline: auto;";
+                    return daydiv;
+                });
+
+            dayParagraphs.forEach(dayParagraph => {
+                bookingDetails.appendChild(dayParagraph);
+            });
+
+            cardBody.appendChild(bookingDetails);
+
+            card.appendChild(cardBody);
+            document.body.appendChild(card);
+
+            if (!isouttime()) {
+
+                const editButton = document.createElement('button');
+                editButton.type = 'edit';
+                editButton.textContent = 'Edit';
+                editButton.addEventListener('click', function () {
+
+                    card.style.display = 'none';
+                    editButton.style.display = 'none';
+                    createBookingForm(data, accessToken);
+
+                });
+                document.body.appendChild(editButton);
+            }
+
+        }
+
+        function createBookingthisweekCard(data, accessToken) {
+
+            const card = document.createElement('div');
+            card.className = 'booking-card';
+
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
+
+
+            const bookingDetails = document.createElement('div');
+            bookingDetails.className = 'booking-details';
+
+            const statusParagraph = document.createElement('h2');
+            statusParagraph.textContent = `สถานะ : ${data.detailData.status}`;
+            statusParagraph.style.textAlign = "center";
+
+            bookingDetails.appendChild(statusParagraph);
+
+            const head = document.createElement('div');
+            const headday = document.createElement('div');
+            headday.textContent = `📅`;
+            headday.style = "width: 30%;";
+            const headtime = document.createElement('div');
+            headtime.textContent = `🕛`;
+            headtime.style = "width: 15%;";
+            const headroute = document.createElement('div');
+            headroute.textContent = `🛣️`;
+            headroute.style = "width: 15%;";
+            const bus = document.createElement('div');
+            bus.textContent = `🚌`;
+            bus.style = "width: 5%;";
+            const seat = document.createElement('div');
+            seat.textContent = `💺`;
+            seat.style = "width: 5%;";
+            head.appendChild(headday);
+            head.appendChild(headtime);
+
+            head.appendChild(headroute);
+            head.appendChild(bus);
+            head.appendChild(seat);
+            head.style = "display: flex; justify-content: space-between; margin-bottom: 10px; width: 100%; margin-inline: auto;";
+            bookingDetails.appendChild(head);
+
+
+            const row = data.detailData.thisweekdata.map(thisweekdata => {
+                const row = document.createElement('div');
+                const rowday = document.createElement('div');
+                rowday.style = "width: 30%;";
+                rowday.textContent = `${thisweekdata.daybound}`;
+                const rowtime = document.createElement('div');
+                rowtime.style = "margin-top: 1px; width: 15%;";
+                rowtime.textContent = `${thisweekdata.time}`;
+                const rowroute = document.createElement('div');
+                rowroute.style = "width: 20%;";
+                rowroute.textContent = `${thisweekdata.route}`;
+                const rowbus = document.createElement('div');
+                rowbus.style = "margin-top: 1px; width: 5%;";
+                rowbus.textContent = `${thisweekdata.bus}`;
+                const rowseat = document.createElement('div');
+                rowseat.style = "margin-top: 1px; width: 5%;";
+                rowseat.textContent = `${thisweekdata.seat}`;
+                row.appendChild(rowday);
+                row.appendChild(rowtime);
+                row.appendChild(rowroute);
+                row.appendChild(rowbus);
+                row.appendChild(rowseat);
+                row.style = "display: flex; justify-content: space-between; margin-bottom: 10px; width: 100%; margin-inline: auto;";
+                //dayParagraph.textContent = `${thisweekdata.daybound}: เวลา ${thisweekdata.time} สาย ${thisweekdata.route} คันที่ ${thisweekdata.bus} ที่นั่ง ${thisweekdata.seat}`;
+                return row;
+            });
+
+            row.forEach(row => {
+                bookingDetails.appendChild(row);
+            });
+
+            cardBody.appendChild(bookingDetails);
+
+            card.appendChild(cardBody);
+            document.body.appendChild(card);
+
+            if (true) {
+
+                const editButton = document.createElement('button');
+                editButton.type = 'edit';
+                editButton.textContent = 'Edit';
+                editButton.addEventListener('click', function () {
+
+                    card.style.display = 'none';
+                    editButton.style.display = 'none';
+                    createBookingForm(data.bookthisweekData, accessToken);
+
+                });
+                document.body.appendChild(editButton);
+            }
+
+
+        }
+
+        function isouttime() {
+            const now = new Date();
+            const dayOfWeek = now.getDay(); // Sunday is 0, Monday is 1, ..., Saturday is 6
+
+            return (now.getHours() >= 14 || now.getHours() < 8) || dayOfWeek === 0 || dayOfWeek === 6;
+        }
+
+
+        function createBookingForm(data, accessToken) {
+
+            const h1 = document.createElement('h1');
+            h1.textContent = 'Booking This Week';
+
+            const currentDate = new Date();
+
+            const thisMonday = new Date(currentDate);
+            thisMonday.setDate(currentDate.getDate() + (1 - currentDate.getDay()) % 7);
+
+            const thisSunday = new Date(thisMonday);
+            thisSunday.setDate(thisMonday.getDate() + 6);
+
+            const formattedDateRange = `${thisMonday.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })} to ${thisSunday.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}`;
+
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/thisweek';
+
+            document.body.appendChild(h1);
+            document.body.appendChild(form);
+
+            ///
+            const daysOfWeek = ['🟡 Monday(in)', '🟡 Monday(out)', '🌸 Tuesday(in)', '🌸 Tuesday(out)', '🟢 Wednesday(in)', '🟢 Wednesday(out)', '🟠 Thursday(in)', '🟠 Thursday(out)', '🔵 Friday(in)', '🔵 Friday(out)', '🟣 Saturday(in)', '🟣 Saturday(out)', '🔴 Sunday(in)', '🔴 Sunday(out)'];
+            const timeSlots = ['07:30', '08:15','10:30', '17:15', '19:30', '20:15', 'ไม่ใช้'];
+            const table = document.createElement('table');
+            table.setAttribute('border', '1');
+            const headerRow = table.insertRow();
+            let th = document.createElement('th');
+            th.textContent = formattedDateRange;
+            headerRow.appendChild(th);
+
+            let thtime = document.createElement('th');
+            thtime.textContent = "เวลา";
+            headerRow.appendChild(thtime);
+
+
+            const now = new Date();
+            const dayWeek = now.getDay();
+            for (const day of daysOfWeek) {
+                const index = daysOfWeek.indexOf(day);
+                const row = table.insertRow();
+                const now = new Date();
+                if (dayWeek * 2 > index + 2) {
+                    row.style.display = 'none';
+                }
+                const dayCell = row.insertCell();
+                dayCell.textContent = day;
+                dayCell.style = "text-align: left;";
+
+                const cell = row.insertCell();
+
+                const select = document.createElement('select');
+                select.name = day.substring(3).toLowerCase();
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'เลือกเวลา';
+                select.appendChild(option);
+                for (let i = 0; i < timeSlots.length; i++) {
+                    if (index % 2 === 0 && (i === 1 || i === 3 || i === 5)) {
+                        continue;
+                    } else if (index % 2 === 1 && (i === 0|| i === 2 || i === 4)) {
+                        continue;
+                    }
+                    if (dayWeek * 2 > index && (i < 2)) {
+                        continue;
+
+                    }
+
+                    const option = document.createElement('option');
+                    option.value = timeSlots[i];
+                    option.textContent = timeSlots[i];
+                    if (data[day.substring(3).toLowerCase()] === timeSlots[i]) {
+                        option.selected = true;
+                    }
+                    select.appendChild(option);
+                }
+                cell.appendChild(select);
+
+            }
+            form.appendChild(table);
+
+            ///
+
+
+            const inputAccessToken = document.createElement('input');
+            inputAccessToken.type = 'hidden';
+            inputAccessToken.id = 'userAccessToken';
+            inputAccessToken.name = 'userAccessToken';
+            inputAccessToken.value = '';
+            inputAccessToken.required = true;
+
+            form.appendChild(inputAccessToken);
+
+            const div = document.createElement('div');
+            div.className = 'footer-button';
+
+            form.appendChild(div);
+
+            const submitButton = document.createElement('button');
+            submitButton.type = 'submit';
+            submitButton.textContent = 'Submit';
+
+            div.appendChild(submitButton);
+
+            document.getElementById('userAccessToken').value = accessToken;
+
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+
+                submitButton.disabled = true;
+
+                form.submit();
+                submitFormAsync()
+                    .then(() => {
+
+                        submitButton.disabled = false;
+                    })
+                    .catch((error) => {
+
+                        submitButton.disabled = false;
+                    });
+
+
+            });
+
+
+        }
+
+
+
+        function submitFormAsync() {
+            return new Promise((resolve, reject) => {
+
+                setTimeout(() => {
+                    console.log('Form submitted successfully');
+                    resolve();
+
+                }, 10000);
+            });
+        }
+
+    </script>
+
+
+</body>
+
+</html>

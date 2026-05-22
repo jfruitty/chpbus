@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Booking Thisweek</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link href="/css/styles.css" rel="stylesheet" type="text/css">
+    <script src="https://static.line-scdn.net/liff/edge/versions/2.13.0/sdk.js"></script>
+</head>
+
+<body>
+    <div class="loader" id="loader"></div>
+    <div class="loading-text" id="loading-text">กำลังตรวจสอบสิทธิ์...</div>
+
+    <script>
+
+        function runApp() {
+            const idToken = liff.getIDToken();
+            const accessToken = liff.getAccessToken()
+
+
+            liff.getProfile().then(profile => {
+
+
+                console.log('Response:', profile);
+                console.log('accessToken:', accessToken);
+
+
+
+                fetch(`/getuserdata?accesstoken=${accessToken}&page=thisweek`)
+                    .then(response => response.json())
+                    .then(data => {
+
+                        console.log(data)
+
+                        document.getElementById('loader').style.display = 'none';
+                        document.getElementById('loading-text').style.display = 'none';
+
+                        if (data.userData.approve == 'approved') {
+
+                            if (data.bookthisweekData.route == '') {  // todo
+
+                                createBookingForm(data.bookthisweekData, accessToken)
+
+                            } else {
+
+                                createBookingthisweekCard(data, accessToken)
+
+                            }
+
+
+                        } else if (data.userData.approve == 'standby') {
+
+                            var status = 'รอแอดมินยืนยัน';
+
+                            createProfileCard(profile.pictureUrl, profile.displayName, status);
+
+                        } else {
+
+                            var status = 'กรุณาลงทะเบียน';
+
+                            createProfileCard(profile.pictureUrl, profile.displayName, status);
+
+
+
+                        }
+                    }).catch(err => console.error(err));
+            }).catch(err => console.error(err));
+
+
+        }
+
+
+
+        liff.init({ liffId: '<%= liffid %>' }, () => {
+            if (liff.isLoggedIn()) {
+
+                runApp()
+            } else {
+                liff.login();
+            }
+        }).catch((err) => {
+            console.log(err.code, err.message);
+        });
+
+
+        function createProfileCard(profilepic, name, status) {
+
+            const card = document.createElement('div');
+            card.className = 'card';
+
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
+
+            const profilePictureContainer = document.createElement('div');
+
+            const profilePicture = document.createElement('img');
+            profilePicture.src = profilepic;
+            profilePicture.alt = 'Profile Picture';
+
+            profilePictureContainer.appendChild(profilePicture);
+
+            const cardText = document.createElement('div');
+            cardText.className = 'card-text';
+
+            const nameParagraph = document.createElement('p');
+            nameParagraph.textContent = 'ชื่อ: ' + name;
+
+
+            const statusParagraph = document.createElement('p');
+            statusParagraph.textContent = 'สถานะ: ' + status;
+
+            cardText.appendChild(nameParagraph);
+            cardText.appendChild(statusParagraph);
+
+            cardBody.appendChild(profilePictureContainer);
+            cardBody.appendChild(cardText);
+
+            card.appendChild(cardBody);
+            document.body.appendChild(card);
+        }
+
+        function createBookingthisweekCard(data, accessToken) {
+
+            const card = document.createElement('div');
+            card.className = 'booking-card';
+
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
+
+            //let bookdata = {
+            //    "status": approve,
+            //    "thisweekdata": boookingthisweekdata = []
+            //}
+
+            //let value = {
+            //    "route": route,
+            //    "daybound": daybound,
+            //    "time": time,
+            //    "bus": bus,
+            //    "seat": seat,
+            //}
+
+            const bookingDetails = document.createElement('div');
+            bookingDetails.className = 'booking-details';
+
+            const statusParagraph = document.createElement('h2');
+            statusParagraph.textContent = `สถานะ : ${data.detailData.status}`;
+            statusParagraph.style.textAlign = "center";
+
+            bookingDetails.appendChild(statusParagraph);
+
+            const head = document.createElement('div');
+            const headday = document.createElement('div');
+            headday.textContent = `📅`;
+            headday.style = "width: 30%;";
+            const headtime = document.createElement('div');
+            headtime.textContent = `🕛`;
+            headtime.style = "width: 15%;";
+            const headroute = document.createElement('div');
+            headroute.textContent = `🛣️`;
+            headroute.style = "width: 15%;";
+            const bus = document.createElement('div');
+            bus.textContent = `🚌`;
+            bus.style = "width: 5%;";
+            const seat = document.createElement('div');
+            seat.textContent = `💺`;
+            seat.style = "width: 5%;";
+            head.appendChild(headday);
+            head.appendChild(headtime);
+
+            head.appendChild(headroute);
+            head.appendChild(bus);
+            head.appendChild(seat);
+            head.style = "display: flex; justify-content: space-between; margin-bottom: 10px; width: 100%; margin-inline: auto;";
+            bookingDetails.appendChild(head);
+
+
+            const row = data.detailData.thisweekdata.map(thisweekdata => {
+                const row = document.createElement('div');
+                const rowday = document.createElement('div');
+                rowday.style = "width: 30%;";
+                rowday.textContent = `${thisweekdata.daybound}`;
+                const rowtime = document.createElement('div');
+                rowtime.style = "margin-top: 1px; width: 15%;";
+                rowtime.textContent = `${thisweekdata.time}`;
+                const rowroute = document.createElement('div');
+                rowroute.style = "width: 20%;";
+                rowroute.textContent = `${thisweekdata.route}`;
+                const rowbus = document.createElement('div');
+                rowbus.style = "margin-top: 1px; width: 5%;";
+                rowbus.textContent = `${thisweekdata.bus}`;
+                const rowseat = document.createElement('div');
+                rowseat.style = "margin-top: 1px; width: 5%;";
+                rowseat.textContent = `${thisweekdata.seat}`;
+                row.appendChild(rowday);
+                row.appendChild(rowtime);
+                row.appendChild(rowroute);
+                row.appendChild(rowbus);
+                row.appendChild(rowseat);
+                row.style = "display: flex; justify-content: space-between; margin-bottom: 10px; width: 100%; margin-inline: auto;";
+                //dayParagraph.textContent = `${thisweekdata.daybound}: เวลา ${thisweekdata.time} สาย ${thisweekdata.route} คันที่ ${thisweekdata.bus} ที่นั่ง ${thisweekdata.seat}`;
+                return row;
+            });
+
+            row.forEach(row => {
+                bookingDetails.appendChild(row);
+            });
+
+            cardBody.appendChild(bookingDetails);
+
+            card.appendChild(cardBody);
+            document.body.appendChild(card);
+
+            if (true) {
+
+                const editButton = document.createElement('button');
+                editButton.type = 'edit';
+                editButton.textContent = 'Edit';
+                editButton.addEventListener('click', function () {
+
+                    card.style.display = 'none';
+                    editButton.style.display = 'none';
+                    createBookingForm(data.bookthisweekData, accessToken);
+
+                });
+                document.body.appendChild(editButton);
+            }
+
+
+        }
+
+        function isAfter2pmOnFriday() {
+            const now = new Date();
+            const dayOfWeek = now.getDay(); // Sunday is 0, Monday is 1, ..., Saturday is 6
+
+            return (dayOfWeek === 5 && now.getHours() >= 14) || dayOfWeek === 0 || dayOfWeek === 6;
+        }
+
+        function createBookingForm(data, accessToken) {
+
+            const h1 = document.createElement('h1');
+            h1.textContent = 'Booking This Week';
+
+            const currentDate = new Date();
+
+            const thisMonday = new Date(currentDate);
+            thisMonday.setDate(currentDate.getDate() + (1 - currentDate.getDay()) % 7);
+
+            const thisSunday = new Date(thisMonday);
+            thisSunday.setDate(thisMonday.getDate() + 6);
+
+            const formattedDateRange = `${thisMonday.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })} to ${thisSunday.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}`;
+
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/thisweek';
+
+            document.body.appendChild(h1);
+            document.body.appendChild(form);
+
+            // Labels and datalist elements for "Section"
+            var labelRoute = document.createElement("label");
+            labelRoute.for = "route";
+            labelRoute.innerText = "จุดขึ้นรถ";
+            form.appendChild(labelRoute);
+
+            var selectRoute = document.createElement("select");
+            selectRoute.id = "route";
+            selectRoute.name = "route";
+            selectRoute.required = true;
+
+            var RouteOptions = [
+      "[01]แคราย อู่ซ่อมรถ",
+      "[02]แคราย บ้านคุณสุรัตธิดา",
+      "[03]แคราย บ้านคุณกัสมา",
+      "[04]แคราย มัสยิดดารุ้ลอับรอร",
+      "[05]แคราย แยกวัดแคราย",
+      "[06]แคราย สะพาน",
+      "[07]แคราย สามแยกหลวงแพ่ง",
+      "[01]แปดริ้ว สัมปทวน",
+      "[02]แปดริ้ว บ้านใหม่",
+      "[03]แปดริ้ว ตลาดโสธร",
+      "[04]แปดริ้ว ซ.3",
+      "[05]แปดริ้ว ซ.ร่มโพธิ์ทอง",
+      "[06]แปดริ้ว คอนโดพราว",
+      "[07]แปดริ้ว สามแยกบางพระ",
+      "[08]แปดริ้ว ซ. 10",
+      "[09]แปดริ้ว ซ. 13",
+      "[10]แปดริ้ว ซ. 15",
+      "[01]แปลงยาว วัดหนองหิน",
+      "[02]แปลงยาว ม.ทองกิตติ",
+      "[03]แปลงยาว ตลาดบางบ่อ",
+      "[04]แปลงยาว ตรงป้ายรอรถเมล์คล่องชลประทาน",
+      "[05]แปลงยาว วัดศรีสุตาราม",
+      "[06]แปลงยาว ร้านเทพธารา",
+      "[07]แปลงยาว หน้าแขวงแปดริ้ว",
+      "[01]กรุงเทพ ซ.นวมินทร์ 77",
+      "[02]กรุงเทพ รพ.พญาไท",
+      "[03]กรุงเทพ รวมอินทรา 107",
+      "[04]กรุงเทพ รามอินทรา 109",
+      "[05]กรุงเทพ รร.เศรษฐบุตร",
+      "[06]กรุงเทพ Big C มีนบุรี",
+      "[07]กรุงเทพ Megahome มีนบุรี",
+      "[08]กรุงเทพ ปั้ม PT - วัดแสนสุข",
+      "[09]กรุงเทพ แยกหนองจอก",
+      "[10]กรุงเทพ ปั้ม SHELL ไฟแดงพื้นที่4",
+      "[01]คลอง14(เสริม) ตลาด16",
+      "[02]คลอง14(เสริม) ค.21",
+      "[03]คลอง14(เสริม) ดอนกลางค.17",
+      "[01]คลอง14 สามแยก",
+      "[02]คลอง14 สุเหร่าคลอง14",
+      "[03]คลอง14 ร้านค้าผู้ใหญ่",
+      "[04]คลอง14 บ้านนิมุ๊",
+      "[05]คลอง14 สาย 14",
+      "[06]คลอง14 บ้านคุณวรรณา",
+      "[07]คลอง14 วัดวิเวก",
+      "[01]คลองเจ้า บ้านคุณนันทวัน",
+      "[02]คลองเจ้า สุเหร่า",
+      "[03]คลองเจ้า ปะปา ม.7",
+      "[04]คลองเจ้า ม.สานฝัน",
+      "[05]คลองเจ้า คลองเจ้า",
+      "[01]ดงน้อย รพ.ราชสาส์น",
+      "[02]ดงน้อย แยกวัดต้นตาล",
+      "[03]ดงน้อย ต้นนา",
+      "[04]ดงน้อย พนมแลนด์ซ.3",
+      "[05]ดงน้อย พนมแลนด์ซ.1",
+      "[06]ดงน้อย โรงแรมมอแกน",
+      "[07]ดงน้อย สะพานวังซุง",
+      "[08]ดงน้อย ซอยบริสุทธิ์",
+      "[09]ดงน้อย ธนาคารกรุงเทพ(เมืองฉะเชิงเทรา)",
+      "[10]ดงน้อย อบต.นครเนื่องเขต",
+      "[01]บางน้ำเปรี้ยว ปั้มPTT บางน้ำเปรี้ยว",
+      "[02]บางน้ำเปรี้ยว ตึกหมอนทอง",
+      "[03]บางน้ำเปรี้ยว เทศบาลบางน้ำเปรี้ยว",
+      "[04]บางน้ำเปรี้ยว ถนนปูน",
+      "[05]บางน้ำเปรี้ยว รถเกี่ยว",
+      "[06]บางน้ำเปรี้ยว หลังวัดบางสาย",
+      "[07]บางน้ำเปรี้ยว อู่ซ่อมรถจตุพร",
+      "[01]ประเวศ บ้านคุณนที",
+      "[02]ประเวศ บ้านคุณรุ่งนภา",
+      "[03]ประเวศ บ้านคุณมัณฑนา",
+      "[04]ประเวศ ร้านค้าสีส้ม",
+      "[05]ประเวศ ทางเข้าโรงเรียนสุเหร่าลาดน้ำขาว",
+      "[06]ประเวศ สถานีรถไฟเปร็ง",
+      "[07]ประเวศ บ้านคุณสุชาติ",
+      "[01]ลาดบัวขาว วัดลาดบัวขาว",
+      "[02]ลาดบัวขาว ศูนย์ Honda ",
+      "[03]ลาดบัวขาว วัดหัวไทร",
+      "[04]ลาดบัวขาว แยกปากน้ำ",
+      "[05]ลาดบัวขาว รพ.บางคล้า",
+      "[06]ลาดบัวขาว ซ.วันดี",
+      "[07]ลาดบัวขาว ธ.กรุงเทพ(บางคล้า)",
+      "[08]ลาดบัวขาว รพ.คริสเตียน",
+      "[09]ลาดบัวขาว ม.สหชัย",
+      "[10]ลาดบัวขาว โรงสีโชควารี",
+      "[11]ลาดบัวขาว วัดเสม็ดเหนือ",
+      "[12]ลาดบัวขาว ปากทางเข้าวัดลาดบัว",
+      "[13]ลาดบัวขาว ปากทางบ้านบางพุดทรา",
+      "[14]ลาดบัวขาว แยกไฟแดงวัดสมาน",
+      "[15]ลาดบัวขาว จุกเฌอ",
+      "[16]ลาดบัวขาว วัดแพรก",
+      "[17]ลาดบัวขาว ม. ไม้ฟ้าโฮม",
+      "[18]ลาดบัวขาว ทรายหาย",
+      "[19]ลาดบัวขาว วัดใหม่บางคล้า",
+      "[20]ลาดบัวขาว วัดเสม็ดเหนือ",
+      "[21]ลาดบัวขาว หมู่บ้านศิวาลัยบางไผ่",
+      "[22]ลาดบัวขาว วัดเซนต์ร็อค",
+      "[23]ลาดบัวขาว อบต.นครเนื่องเขต",
+      "[01]วัดเกาะ ปั้มบางจาก",
+      "[02]วัดเกาะ ปั้มคาเทค",
+      "[03]วัดเกาะ วัดนาคู",
+      "[04]วัดเกาะ ม.มารวย1-2",
+      "[05]วัดเกาะ ม.มารวย3-4",
+      "[06]วัดเกาะ รร.พระยาศรีสุนทร",
+      "[07]วัดเกาะ ปากทางเข้ามารวยโสธร 4",
+      "[08]วัดเกาะ ซอยศรีเจริญ",
+      "[09]วัดเกาะ สถานีขนส่ง",
+      "[01]วัดสว่าง บ้านคุณพัชรินทร์",
+      "[02]วัดสว่าง บ้านคุณอุสา",
+      "[03]วัดสว่าง บ้านคุณจิราวรรณ",
+      "[04]วัดสว่าง บ้านเชิงสะพาน",
+      "[05]วัดสว่าง ห้องเช่า",
+      "[06]วัดสว่าง บ้านคุณปราณี",
+      "[07]วัดสว่าง โค้งอนามัย",
+      "[08]วัดสว่าง ปั้ม Caltex โรบินสัน",
+      "[01]สนามชัย แยกนาน้อย",
+      "[02]สนามชัย สามแยกเอไอเอ",
+      "[03]สนามชัย โลตัสพนม",
+      "[04]สนามชัย โรงพักพนม",
+      "[05]สนามชัย ม.ปลายกระจับ",
+      "[06]สนามชัย วัดจุกกะเฌอ",
+      "[07]สนามชัย ปั้มPT",
+      "[08]สนามชัย ดอนทอง",
+      "[09]สนามชัย แยกไฟแดงศาลากลาง (ถนนมหาจักรพรรดิ์ แปดริ้ว)",
+      "[10]สนามชัย แขวงการทางฉะเชิงเทรา",
+      "[11]สนามชัย ตรงข้ามสถานีรถไฟ ฉะเชิงเทรา",
+      "[01]หนามแดง บ้านคุณกัลยกร",
+      "[02]หนามแดง บ้านคุณดิศรา",
+      "[03]หนามแดง บ้านคุณสุขเกษม",
+      "[04]หนามแดง บ้านคุณสุกัญญา",
+      "[05]หนามแดง บ้านคุณศิริรัตน์",
+      "[06]หนามแดง บ้านคุณมลนิภา",
+      "[07]หนามแดง ห้องเช่าสีฟ้า",
+      "[08]หนามแดง ห้องเช่าร้านค้า",
+      "[09]หนามแดง บ้านคุณมาลินี",
+      "[10]หนามแดง บ้านคุณรัชนี งาม",
+      "[01]หมู่บ้านริมบึง ม.ริมบึง",
+      "[02]หมู่บ้านริมบึง ม.พูนลาภ",
+      "[03]หมู่บ้านริมบึง ม.กาญจนธานี",
+      "[04]หมู่บ้านริมบึง ม.ทรัพย์กมล",
+      "[05]หมู่บ้านริมบึง ซ.ลักยิ้ม"
+    ];
+
+            RouteOptions.forEach(function (optionText, index) {
+                var option = document.createElement("option");
+                option.value = optionText;
+                option.innerText = optionText;
+
+                if (optionText === data.route) {
+                    option.selected = true;
+                }
+                selectRoute.appendChild(option);
+            });
+
+
+            form.appendChild(selectRoute);
+
+            const daysOfWeek = ['🟡 Monday(in)', '🟡 Monday(out)',
+                '🌸 Tuesday(in)', '🌸 Tuesday(out)',
+                '🟢 Wednesday(in)', '🟢 Wednesday(out)',
+                '🟠 Thursday(in)', '🟠 Thursday(out)',
+                '🔵 Friday(in)', '🔵 Friday(out)',
+                '🟣 Saturday(in)', '🟣 Saturday(out)',
+                '🔴 Sunday(in)', '🔴 Sunday(out)'];
+            const timeSlots = ['08:00', '17:00', '20:00', 'ไม่ใช้'];
+
+            const table = document.createElement('table');
+            table.setAttribute('border', '1');
+
+            const headerRow = table.insertRow();
+
+            //headerRow.insertCell();
+            let th = document.createElement('th');
+            th.textContent = formattedDateRange;
+            headerRow.appendChild(th);
+
+            for (const slot of timeSlots) {
+                const th = document.createElement('th');
+                th.textContent = slot;
+                headerRow.appendChild(th);
+            }
+
+            const now = new Date();
+            const dayWeek = now.getDay();
+
+
+            for (const day of daysOfWeek) {
+                const index = daysOfWeek.indexOf(day);
+                const row = table.insertRow();
+
+                const now = new Date();
+
+                if (now.getHours() > 13 && dayWeek * 2 > index) {
+                    row.style.display = 'none';
+                } else if (dayWeek * 2 > index + 2) {
+                    row.style.display = 'none';
+                }
+
+                const dayCell = row.insertCell();
+                dayCell.textContent = day;
+                dayCell.style = "text-align: left;";
+
+                for (let i = 0; i < timeSlots.length; i++) {
+                    const cell = row.insertCell();
+
+                    if (index % 2 === 0 && i === 1) {
+
+                        continue;
+                    }
+
+                    const radio = document.createElement('input');
+                    radio.type = 'radio';
+                    radio.name = day.substring(3).toLowerCase();
+                    radio.value = timeSlots[i];
+
+                    if (data[day.substring(3).toLowerCase()] === timeSlots[i]) {
+                        radio.checked = true;
+                    }
+
+
+                    cell.appendChild(radio);
+                }
+            }
+
+            form.appendChild(table);
+
+            const inputAccessToken = document.createElement('input');
+            inputAccessToken.type = 'hidden';
+            inputAccessToken.id = 'userAccessToken';
+            inputAccessToken.name = 'userAccessToken';
+            inputAccessToken.value = '';
+            inputAccessToken.required = true;
+
+
+            form.appendChild(inputAccessToken);
+
+            const div = document.createElement('div');
+            div.className = 'footer-button';
+
+            form.appendChild(div);
+
+
+            const submitButton = document.createElement('button');
+            submitButton.type = 'submit';
+            submitButton.textContent = 'Submit';
+
+            div.appendChild(submitButton);
+
+            document.getElementById('userAccessToken').value = accessToken;
+
+            form.addEventListener('submit', function (event) {
+
+                event.preventDefault();
+
+                submitButton.disabled = true;
+              
+                form.submit();
+                submitFormAsync()
+                    .then(() => {
+                      
+                        submitButton.disabled = false;
+                    })
+                    .catch((error) => {
+                
+                        submitButton.disabled = false;
+                    });
+            });
+
+
+        }
+
+
+
+        function submitFormAsync() {
+            return new Promise((resolve, reject) => {
+
+                setTimeout(() => {
+                    console.log('Form submitted successfully');
+                    resolve();
+
+                }, 10000);
+            });
+        }
+
+    </script>
+
+
+</body>
+
+</html>

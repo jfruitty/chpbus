@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Driver Check</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link href="/css/styles.css" rel="stylesheet" type="text/css">
+    <script src="https://static.line-scdn.net/liff/edge/versions/2.13.0/sdk.js"></script>
+</head>
+
+<body>
+    <div class="loader" id="loader"></div>
+    <div class="loading-text" id="loading-text">กำลังตรวจสอบสิทธิ์...</div>
+
+    <script>
+
+        async function runApp() {
+            const idToken = liff.getIDToken();
+            const accessToken = liff.getAccessToken();
+
+            try {
+
+                const profile = await liff.getProfile();
+                const response = await fetch(`/getuserdata?accesstoken=${accessToken}&page=thisweek`);
+                const data = await response.json();
+
+                document.getElementById('loader').style.display = 'none';
+                document.getElementById('loading-text').style.display = 'none';
+
+                if (data.userData.approve == 'approved') {
+
+                    if (data.userData.department == 'Admin' || data.userData.department == 'Driver') {
+
+                        const res = await fetch(`/drivercheck?user=`);
+                        const bus = await res.json();
+
+                        createBookingthisweekCard(bus.busnextweek, accessToken)
+
+                    } else {
+
+                        var status = 'Not Authorized';
+
+                        createProfileCard(profile.pictureUrl, profile.displayName, status);
+
+                    }
+
+                } else if (data.userData.approve == 'standby') {
+
+                    var status = 'รอแอดมินยืนยัน';
+
+                    createProfileCard(profile.pictureUrl, profile.displayName, status);
+
+                } else {
+
+                    var status = 'กรุณาลงทะเบียน';
+
+                    createProfileCard(profile.pictureUrl, profile.displayName, status);
+
+                }
+
+            } catch (error) {
+                console.error("Error:", error);
+            }
+
+        }
+
+
+        liff.init({ liffId: '<%= liffid %>' }, () => {
+            if (liff.isLoggedIn()) {
+                runApp()
+            } else {
+                liff.login();
+
+            }
+        }).catch((err) => {
+            console.log(err.code, err.message);
+        });
+
+
+        function createProfileCard(profilepic, name, status) {
+
+            const card = document.createElement('div');
+            card.className = 'card';
+
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
+
+            const profilePictureContainer = document.createElement('div');
+
+            const profilePicture = document.createElement('img');
+            profilePicture.src = profilepic;
+            profilePicture.alt = 'Profile Picture';
+
+            profilePictureContainer.appendChild(profilePicture);
+
+            const cardText = document.createElement('div');
+            cardText.className = 'card-text';
+
+            const nameParagraph = document.createElement('p');
+            nameParagraph.textContent = 'ชื่อ: ' + name;
+
+
+            const statusParagraph = document.createElement('p');
+            statusParagraph.textContent = 'สถานะ: ' + status;
+
+            cardText.appendChild(nameParagraph);
+            cardText.appendChild(statusParagraph);
+
+            cardBody.appendChild(profilePictureContainer);
+            cardBody.appendChild(cardText);
+
+            card.appendChild(cardBody);
+            document.body.appendChild(card);
+        }
+
+        function createBookingthisweekCard(data, accessToken) {
+
+            console.log(data)
+
+            const card = document.createElement('div');
+            card.className = 'booking-card';
+
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
+
+            const bookingDetails = document.createElement('div');
+            bookingDetails.className = 'booking-details';
+            bookingDetails.id = 'booking-details';
+
+            var selectDay = document.createElement("select");
+            selectDay.id = "day";
+            selectDay.name = "day";
+            selectDay.required = true;
+
+            var dayOptions = ['🟡 Monday(in)', '🟡 Monday(out)',
+                '🌸 Tuesday(in)', '🌸 Tuesday(out)',
+                '🟢 Wednesday(in)', '🟢 Wednesday(out)',
+                '🟠 Thursday(in)', '🟠 Thursday(out)',
+                '🔵 Friday(in)', '🔵 Friday(out)',
+                '🟣 Saturday(in)', '🟣 Saturday(out)',
+                '🔴 Sunday(in)', '🔴 Sunday(out)'];
+
+            dayOptions.forEach(function (optionText, index) {
+                var option = document.createElement("option");
+                option.value = optionText.substring(3).toLowerCase();
+                option.innerText = optionText;
+                selectDay.appendChild(option);
+            });
+
+            selectDay.addEventListener("change", function () {
+                updaterow(selectTime, selectDay, data, bookingDetails);
+            });
+
+            bookingDetails.appendChild(selectDay);
+
+            var selectTime = document.createElement("select");
+            selectTime.id = "time";
+            selectTime.name = "time";
+            selectTime.required = true;
+
+            var timeOptions = ['08:00', '17:00',
+                '20:00',];
+
+            timeOptions.forEach(function (optionText, index) {
+                var option = document.createElement("option");
+                option.value = optionText;
+                option.innerText = optionText;
+
+
+                selectTime.appendChild(option);
+            });
+
+            selectTime.addEventListener("change", function () {
+
+                console.log()
+                updaterow(selectTime, selectDay, data, bookingDetails);
+            });
+
+
+            bookingDetails.appendChild(selectTime);
+
+
+            const head = document.createElement('div');
+            const headday = document.createElement('div');
+            headday.textContent = `🛣️`;
+            headday.style = "width: 80%;";
+            const bus = document.createElement('div');
+            bus.textContent = `🚌`;
+            bus.style = "width: 10%;";
+            const seat = document.createElement('div');
+            seat.textContent = `💺`;
+            seat.style = "width: 10%;";
+            head.appendChild(headday);
+            head.appendChild(bus);
+            head.appendChild(seat);
+            head.style = "display: flex; justify-content: space-between; margin-bottom: 10px; width: 100%; margin-inline: auto;";
+            bookingDetails.appendChild(head);
+
+            updaterow(selectTime, selectDay, data, bookingDetails);
+
+            cardBody.appendChild(bookingDetails);
+
+            card.appendChild(cardBody);
+            document.body.appendChild(card);
+
+            const approveButton = document.createElement('button');
+            approveButton.type = 'edit';
+            approveButton.textContent = 'Approve';
+
+            document.body.appendChild(approveButton);
+
+
+        }
+
+        function updaterow(selectTime, selectDay, data, bookingDetails) {
+
+            console.log(selectTime.value)
+            console.log(selectDay.value)
+
+            let array = [];
+            for (i in data) {
+
+                if (data[i][2] == selectTime.value) {
+                    if (data[i][1] == 'จันทร์ ขาเข้า' && selectDay.value == 'monday(in)') {
+                        array.push(data[i]);
+                    } else if (data[i][1] == 'จันทร์ ขาออก' && selectDay.value == 'monday(out)') {
+                        array.push(data[i]);
+                    } else if (data[i][1] == 'อังคาร ขาเข้า' && selectDay.value == 'tuesday(in)') {
+                        array.push(data[i]);
+                    } else if (data[i][1] == 'อังคาร ขาออก' && selectDay.value == 'tuesday(out)') {
+                        array.push(data[i]);
+                    } else if (data[i][1] == 'พุธ ขาเข้า' && selectDay.value == 'wednesday(in)') {
+                        array.push(data[i]);
+                    } else if (data[i][1] == 'พุธ ขาออก' && selectDay.value == 'wednesday(out)') {
+                        array.push(data[i]);
+                    } else if (data[i][1] == 'พฤหัส ขาเข้า' && selectDay.value == 'thursday(in)') {
+                        array.push(data[i]);
+                    } else if (data[i][1] == 'พฤหัส ขาออก' && selectDay.value == 'thursday(out)') {
+                        array.push(data[i]);
+                    } else if (data[i][1] == 'ศุกร์ ขาเข้า' && selectDay.value == 'friday(in)') {
+                        array.push(data[i]);
+                    } else if (data[i][1] == 'ศุกร์ ขาออก' && selectDay.value == 'friday(out)') {
+                        array.push(data[i]);
+                    } else if (data[i][1] == 'เสาร์ ขาเข้า' && selectDay.value == 'saturday(in)') {
+                        array.push(data[i]);
+                    } else if (data[i][1] == 'เสาร์ ขาออก' && selectDay.value == 'saturday(out)') {
+                        array.push(data[i]);
+                    } else if (data[i][1] == 'อาทิตย์ ขาเข้า' && selectDay.value == 'sunday(in)') {
+                        array.push(data[i]);
+                    } else if (data[i][1] == 'อาทิตย์ ขาออก' && selectDay.value == 'sunday(out)') {
+                        array.push(data[i]);
+                    }
+
+                }
+            }
+
+            let row = array.map(array => {
+                const row = document.createElement('div');
+                const rowday = document.createElement('div');
+                rowday.style = "width: 80%;";
+                rowday.textContent = `${array[0]}`;
+                const rowbus = document.createElement('div');
+                rowbus.style = "margin-top: 1px; width: 10%;";
+                rowbus.textContent = `${array[3]}`;
+                const rowseat = document.createElement('div');
+                rowseat.style = "margin-top: 1px; width: 10%;";
+                rowseat.textContent = `${array[4]}`;
+                row.appendChild(rowday);
+          
+                row.appendChild(rowbus);
+                row.appendChild(rowseat);
+                row.style = "display: flex; justify-content: space-between; margin-bottom: 10px; width: 100%; margin-inline: auto;";
+                return row;
+            });
+
+            const firstTwoChildren = Array.from(bookingDetails.children).slice(0, 3);
+
+            bookingDetails.innerHTML = "";
+
+            firstTwoChildren.forEach(child => bookingDetails.appendChild(child));
+
+            row.forEach(row => {
+                bookingDetails.appendChild(row);
+            });
+
+
+        }
+
+
+
+        function submitFormAsync() {
+            return new Promise((resolve, reject) => {
+
+                setTimeout(() => {
+                    console.log('Form submitted successfully');
+                    resolve();
+
+                }, 10000);
+            });
+        }
+
+    </script>
+
+
+</body>
+
+</html>

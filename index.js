@@ -1,0 +1,1695 @@
+'use strict';
+
+const express = require('express');
+const path = require('path');
+const axios = require('axios');
+const crypto = require('crypto');
+const fs = require('fs');
+const { Pool } = require('pg');
+const createCsvWriter = require('csv-writer').createObjectCsvWriter;
+const ExcelJS = require('exceljs');
+require('dotenv').config();
+
+const app = express();
+
+// --- Postgres pool ---
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+  connectionTimeoutMillis: 30000,
+  max: 95,
+  idleTimeoutMillis: 40000,
+  keepAlive: true,
+});
+
+// --- LINE / LIFF config from env ---
+const accessToken = process.env.CHANNELACCESSTOKEN;
+const channelSecret = process.env.CHANNELSECRET;
+const lineChannelId = process.env.LINE_CHANNEL_ID;
+
+const liffIds = {
+  register:   process.env.LIFF_REGISTER   || '',
+  nextweek:   process.env.LIFF_NEXTWEEK   || '',
+  thisweek:   process.env.LIFF_THISWEEK   || '',
+  detail:     process.env.LIFF_DETAIL     || '',
+  supapprove: process.env.LIFF_SUPAPPROVE || '',
+  hr:         process.env.LIFF_HR         || '',
+};
+
+const adminLineUsers = (process.env.ADMIN_LINE_USERS || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+
+// --- Express setup ---
+app.set('view engine', 'ejs');
+app.use('/static', express.static(path.join(__dirname, 'public')));
+app.use(express.static('public'));
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+
+// --- Cookie-signed admin/driver auth ---
+const AUTH_COOKIE = 'chp_auth';
+const AUTH_TTL_MS = 8 * 60 * 60 * 1000;
+
+function authSecret() {
+  return process.env.AUTH_SECRET || process.env.CHANNELSECRET || 'change-me';
+}
+
+function signAuth(role) {
+  const exp = Date.now() + AUTH_TTL_MS;
+  const payload = `${role}.${exp}`;
+  const sig = crypto.createHmac('sha256', authSecret()).update(payload).digest('hex');
+  return `${payload}.${sig}`;
+}
+
+function verifyAuth(token) {
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [role, exp, sig] = parts;
+  const expected = crypto.createHmac('sha256', authSecret()).update(`${role}.${exp}`).digest('hex');
+  if (sig.length !== expected.length) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  if (Number(exp) < Date.now()) return null;
+  return { role };
+}
+
+function parseCookies(req) {
+  const header = req.headers.cookie;
+  if (!header) return {};
+  const out = {};
+  for (const pair of header.split(';')) {
+    const idx = pair.indexOf('=');
+    if (idx < 0) continue;
+    const key = pair.slice(0, idx).trim();
+    const val = decodeURIComponent(pair.slice(idx + 1).trim());
+    out[key] = val;
+  }
+  return out;
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    const cookies = parseCookies(req);
+    const user = verifyAuth(cookies[AUTH_COOKIE]);
+    if (!user || !roles.includes(user.role)) {
+      return res.redirect('/login');
+    }
+    req.user = user;
+    next();
+  };
+}
+
+// CHP cutoff: after Friday 15:00 the packing for Sat/Sun/Mon has already
+// run (see Apps Script calculatedaily Friday branch at 14:30-14:35),
+// so nextweek edits should be locked until the weekly rollover.
+function isAfterChpCutoff() {
+  const now = new Date();
+  const d = now.getDay();
+  return (d === 5 && now.getHours() >= 15) || d === 0 || d === 6;
+}
+
+async function telegramNotify(message) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!botToken || !chatId) return false;
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' }),
+    });
+    if (!response.ok) {
+      console.error(`Telegram API error: ${response.status} - ${await response.text()}`);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error('Telegram send error:', error.message);
+    return false;
+  }
+}
+
+async function sendPushMessage(userIds, msg) {
+  if (!accessToken) {
+    console.error('CHANNELACCESSTOKEN not set; sendPushMessage skipped');
+    return;
+  }
+  try {
+    const response = await axios.post(
+      'https://api.line.me/v2/bot/message/multicast',
+      { to: userIds, messages: [{ type: 'text', text: msg }] },
+      { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` } }
+    );
+    return response.data;
+  } catch (err) {
+    console.error('sendPushMessage error:', err.response ? err.response.data : err.message);
+  }
+}
+
+// --- LIFF access-token verification ---
+async function verifyAndFetchProfile(userAccessToken, res) {
+  if (!userAccessToken) {
+    return res.json({ error: 'Access token is missing' });
+  }
+  try {
+    const verifyResponse = await axios.get(
+      `https://api.line.me/oauth2/v2.1/verify?access_token=${userAccessToken}`
+    );
+    const { client_id, expires_in } = verifyResponse.data;
+
+    if (lineChannelId && client_id !== lineChannelId) {
+      return res.json({ error: 'Client id mismatch' });
+    }
+    if (expires_in <= 0) {
+      return res.json({ error: 'Client id expire' });
+    }
+
+    const profileResponse = await axios.get('https://api.line.me/v2/profile', {
+      headers: { Authorization: `Bearer ${userAccessToken}` },
+    });
+    return profileResponse;
+  } catch (error) {
+    console.error('Error during verification and profile retrieval:', error.message);
+    return res.json({ error: 'Internal Server Error' });
+  }
+}
+
+app.post('/verifyaccesstoken', async (req, res) => {
+  const { accessToken: userAccessToken } = req.body;
+  try {
+    const response = await axios.get(
+      `https://api.line.me/oauth2/v2.1/verify?access_token=${userAccessToken}`
+    );
+    const { client_id, expires_in } = response.data;
+
+    if (lineChannelId && client_id !== lineChannelId) {
+      return res.json({ valid: false });
+    }
+    if (expires_in <= 2000) {
+      return res.json({ valid: false });
+    }
+
+    const profileResponse = await axios.get('https://api.line.me/v2/profile', {
+      headers: { Authorization: `Bearer ${userAccessToken}` },
+    });
+    res.json({ valid: !!profileResponse.data.userId });
+  } catch (error) {
+    console.error('Error verifying access token:', error.response ? error.response.data : error.message);
+    res.json({ valid: false });
+  }
+});
+
+// --- chp.* pipeline transfer helpers (used by /weekly, /driversendtohr) ---
+
+async function chpTransferThisweekToLastweek() {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM chp.lastweek');
+    await client.query(`
+      INSERT INTO chp.lastweek (
+        userid, route, monday_inbound, monday_outbound,
+        tuesday_inbound, tuesday_outbound, wednesday_inbound, wednesday_outbound,
+        thursday_inbound, thursday_outbound, friday_inbound, friday_outbound,
+        saturday_inbound, saturday_outbound, sunday_inbound, sunday_outbound,
+        department_approval
+      )
+      SELECT
+        userid, route, monday_inbound, monday_outbound,
+        tuesday_inbound, tuesday_outbound, wednesday_inbound, wednesday_outbound,
+        thursday_inbound, thursday_outbound, friday_inbound, friday_outbound,
+        saturday_inbound, saturday_outbound, sunday_inbound, sunday_outbound,
+        department_approval
+      FROM chp.thisweek
+    `);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('chpTransferThisweekToLastweek error:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function chpTransferNextweekToThisweek() {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM chp.thisweek');
+    await client.query(`
+      INSERT INTO chp.thisweek (
+        userid, route, monday_inbound, monday_outbound,
+        tuesday_inbound, tuesday_outbound, wednesday_inbound, wednesday_outbound,
+        thursday_inbound, thursday_outbound, friday_inbound, friday_outbound,
+        saturday_inbound, saturday_outbound, sunday_inbound, sunday_outbound,
+        department_approval
+      )
+      SELECT
+        userid, route, monday_inbound, monday_outbound,
+        tuesday_inbound, tuesday_outbound, wednesday_inbound, wednesday_outbound,
+        thursday_inbound, thursday_outbound, friday_inbound, friday_outbound,
+        saturday_inbound, saturday_outbound, sunday_inbound, sunday_outbound,
+        department_approval
+      FROM chp.nextweek
+    `);
+    await client.query('DELETE FROM chp.nextweek');
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('chpTransferNextweekToThisweek error:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function chpTransferDriverToBustoday() {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM chp.bustoday');
+    await client.query(`
+      INSERT INTO chp.bustoday (
+        driver_user_id, per_id, first_name,
+        last_name, route, day, bound, time, bus_number
+      )
+      SELECT
+        driver_user_id, per_id, first_name,
+        last_name, route, day, bound, time, bus_number
+      FROM chp.driver
+    `);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('chpTransferDriverToBustoday error:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function chpTransferSeatdriverToSeattoday() {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM chp.seattoday');
+    await client.query(`
+      INSERT INTO chp.seattoday (
+        userid, perid, first_name,
+        last_name, route, location, day,
+        time, busnumber, seat, bound
+      )
+      SELECT
+        userid, perid, first_name,
+        last_name, route, location, day,
+        time, busnumber, seat, bound
+      FROM chp.seatdriver
+    `);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('chpTransferSeatdriverToSeattoday error:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function chpTransferBustodayToBusfromhr() {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM chp.busfromhr');
+    await client.query(`
+      INSERT INTO chp.busfromhr (
+        driver_user_id, per_id, first_name,
+        last_name, route, day, bound, time, bus_number
+      )
+      SELECT
+        driver_user_id, per_id, first_name,
+        last_name, route, day, bound, time, bus_number
+      FROM chp.bustoday
+    `);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('chpTransferBustodayToBusfromhr error:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function chpTransferSeattodayToSeatfromhr() {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM chp.seatfromhr');
+    await client.query(`
+      INSERT INTO chp.seatfromhr (
+        userid, perid, first_name,
+        last_name, route, location, day,
+        time, busnumber, seat, bound
+      )
+      SELECT
+        userid, perid, first_name,
+        last_name, route, location, day,
+        time, busnumber, seat, bound
+      FROM chp.seattoday
+    `);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('chpTransferSeattodayToSeatfromhr error:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// --- Web auth routes ---
+app.get('/', (req, res) => {
+  res.render('index', { title: 'CHP Shuttle Bus' });
+});
+
+app.get('/login', (req, res) => {
+  const cookies = parseCookies(req);
+  const user = verifyAuth(cookies[AUTH_COOKIE]);
+  if (user) {
+    return res.redirect(user.role === 'admin' ? '/member' : '/driver');
+  }
+  res.render('login', { title: 'Login', error: null });
+});
+
+app.post('/login', (req, res) => {
+  const { username, password } = req.body || {};
+  let role = null;
+  if (username === process.env.ADMIN_USER && password === process.env.ADMIN_PASS) {
+    role = 'admin';
+  } else if (username === process.env.DRIVER_USER && password === process.env.DRIVER_PASS) {
+    role = 'driver';
+  }
+  if (!role) {
+    return res.status(401).render('login', { title: 'Login', error: 'Invalid username or password' });
+  }
+  res.cookie(AUTH_COOKIE, signAuth(role), {
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: AUTH_TTL_MS,
+  });
+  res.redirect(role === 'admin' ? '/member' : '/driver');
+});
+
+app.get('/logout', (req, res) => {
+  res.clearCookie(AUTH_COOKIE);
+  res.redirect('/login');
+});
+
+// --- CHP route derivation from a user's pickup point ---
+// Mirrors fillsheetwhenuserbooknextweek() in the Apps Script: the user's
+// stored "point" (e.g. "[09]ดงน้อย โลตัส เกาะขนุน") drives the route name
+// written on each booking row. Multi-stop routes collapse to "X จุด N-M";
+// [22]/[23]ลาดบัวขาว also normalize the pickup point itself.
+function chpDeriveRoute(point) {
+  if (!point) return { route: null, point: null };
+  const firstChunk = point.split(/\s+/, 1)[0];
+
+  const SANAMCHAI = ['[01]สนามชัย', '[02]สนามชัย', '[03]สนามชัย'];
+  const DONGNOI = ['[01]ดงน้อย', '[02]ดงน้อย', '[03]ดงน้อย', '[04]ดงน้อย', '[05]ดงน้อย'];
+  const LADBUAKHAW = Array.from({ length: 14 }, (_, i) =>
+    `[${String(i + 1).padStart(2, '0')}]ลาดบัวขาว`);
+  const PLAENGYAO = Array.from({ length: 6 }, (_, i) =>
+    `[${String(i + 1).padStart(2, '0')}]แปลงยาว`);
+
+  if (SANAMCHAI.includes(firstChunk))  return { route: 'สนามชัย จุด 1-3',   point };
+  if (DONGNOI.includes(firstChunk))    return { route: 'ดงน้อย จุด 1-5',    point };
+  if (LADBUAKHAW.includes(firstChunk)) return { route: 'ลาดบัวขาว จุด 1-14', point };
+  if (PLAENGYAO.includes(firstChunk))  return { route: 'แปลงยาว จุด 1-6',   point };
+  if (firstChunk === '[22]ลาดบัวขาว') return { route: 'ลาดบัวขาว จุด 1-14', point: '[0022]ลาดบัวขาว ศูนย์Honda' };
+  if (firstChunk === '[23]ลาดบัวขาว') return { route: 'ลาดบัวขาว จุด 1-14', point: '[0023]ลาดบัวขาว แยกตั๊กม้อ' };
+  return { route: firstChunk.length >= 4 ? firstChunk.substring(4) : firstChunk, point };
+}
+
+// --- Phase 1: LIFF user pages + JSON data endpoints ---
+
+app.get('/register', (req, res) => {
+  res.render('register', { title: 'Register Form', liffid: liffIds.register });
+});
+
+app.post('/register', async (req, res) => {
+  // CHP register form sends "name"/"surname" (Apps Script field names).
+  const {
+    userAccessToken,
+    displayname,
+    pernumber,
+    name,
+    surname,
+    department,
+  } = req.body;
+
+  if (!userAccessToken || !pernumber || !name || !surname || !department) {
+    return res.render('register', { title: 'Register Form', liffid: liffIds.register });
+  }
+
+  const profileResponse = await verifyAndFetchProfile(userAccessToken, res);
+  if (!profileResponse || !profileResponse.data || !profileResponse.data.userId) return;
+
+  const userid = profileResponse.data.userId;
+
+  const client = await pool.connect();
+  try {
+    await client.query(
+      `INSERT INTO chp.users (perid, userid, displayname, first_name, last_name, department, approvalstatus)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT DO NOTHING`,
+      [pernumber, userid, displayname, name, surname, department, 'pending']
+    );
+    await sendPushMessage(adminLineUsers,
+      `คุณ ${name} ${surname} เลขประจำตัว ${pernumber} แผนก ${department} ลงทะเบียนครับ`);
+  } catch (err) {
+    console.error('POST /register error:', err);
+    await telegramNotify(`CHP /register error: ${err.message}`);
+  } finally {
+    client.release();
+  }
+
+  res.render('register', { title: 'Register Form', liffid: liffIds.register });
+});
+
+// --- Booking next week ---
+
+app.get('/nextweek', (req, res) => {
+  res.render('nextweek', { title: 'Booking Next Week', liffid: liffIds.nextweek });
+});
+
+app.post('/nextweek', async (req, res) => {
+  const userAccessToken = req.body.userAccessToken;
+  const fields = {
+    monin:   req.body['monday(in)']    || 'ไม่ใช้',
+    monout:  req.body['monday(out)']   || 'ไม่ใช้',
+    tuesin:  req.body['tuesday(in)']   || 'ไม่ใช้',
+    tuesout: req.body['tuesday(out)']  || 'ไม่ใช้',
+    wedin:   req.body['wednesday(in)'] || 'ไม่ใช้',
+    wedout:  req.body['wednesday(out)']|| 'ไม่ใช้',
+    thuin:   req.body['thursday(in)']  || 'ไม่ใช้',
+    thout:   req.body['thursday(out)'] || 'ไม่ใช้',
+    friin:   req.body['friday(in)']    || 'ไม่ใช้',
+    friout:  req.body['friday(out)']   || 'ไม่ใช้',
+    satin:   req.body['saturday(in)']  || 'ไม่ใช้',
+    satout:  req.body['saturday(out)'] || 'ไม่ใช้',
+    sunin:   req.body['sunday(in)']    || 'ไม่ใช้',
+    sunout:  req.body['sunday(out)']   || 'ไม่ใช้',
+  };
+
+  const profileResponse = await verifyAndFetchProfile(userAccessToken, res);
+  if (!profileResponse || !profileResponse.data || !profileResponse.data.userId) return;
+  const userid = profileResponse.data.userId;
+
+  if (isAfterChpCutoff()) {
+    return res.render('nextweek', { title: 'Booking Next Week', liffid: liffIds.nextweek });
+  }
+
+  const client = await pool.connect();
+  try {
+    const userResult = await client.query(
+      'SELECT location FROM chp.users WHERE userid = $1',
+      [userid]
+    );
+    if (userResult.rows.length === 0) {
+      return res.render('nextweek', { title: 'Booking Next Week', liffid: liffIds.nextweek });
+    }
+
+    const { route } = chpDeriveRoute(userResult.rows[0].location);
+
+    const exists = await client.query('SELECT 1 FROM chp.nextweek WHERE userid = $1', [userid]);
+
+    if (exists.rows.length > 0) {
+      await client.query(
+        `UPDATE chp.nextweek SET
+           monday_inbound = $1, monday_outbound = $2,
+           tuesday_inbound = $3, tuesday_outbound = $4,
+           wednesday_inbound = $5, wednesday_outbound = $6,
+           thursday_inbound = $7, thursday_outbound = $8,
+           friday_inbound = $9, friday_outbound = $10,
+           saturday_inbound = $11, saturday_outbound = $12,
+           sunday_inbound = $13, sunday_outbound = $14,
+           route = $16, department_approval = $17
+         WHERE userid = $15`,
+        [
+          fields.monin, fields.monout, fields.tuesin, fields.tuesout,
+          fields.wedin, fields.wedout, fields.thuin, fields.thout,
+          fields.friin, fields.friout, fields.satin, fields.satout,
+          fields.sunin, fields.sunout, userid, route, 'pending',
+        ]
+      );
+    } else {
+      await client.query(
+        `INSERT INTO chp.nextweek (
+           userid,
+           monday_inbound, monday_outbound,
+           tuesday_inbound, tuesday_outbound,
+           wednesday_inbound, wednesday_outbound,
+           thursday_inbound, thursday_outbound,
+           friday_inbound, friday_outbound,
+           saturday_inbound, saturday_outbound,
+           sunday_inbound, sunday_outbound,
+           route, department_approval
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+        [
+          userid,
+          fields.monin, fields.monout, fields.tuesin, fields.tuesout,
+          fields.wedin, fields.wedout, fields.thuin, fields.thout,
+          fields.friin, fields.friout, fields.satin, fields.satout,
+          fields.sunin, fields.sunout, route, 'pending',
+        ]
+      );
+    }
+  } catch (err) {
+    console.error('POST /nextweek error:', err);
+    await telegramNotify(`CHP /nextweek error: ${err.message}`);
+  } finally {
+    client.release();
+  }
+
+  res.render('nextweek', { title: 'Booking Next Week', liffid: liffIds.nextweek });
+});
+
+// --- Booking this week (CHP allows mid-week edits) ---
+
+app.get('/thisweek', (req, res) => {
+  res.render('thisweek', { title: 'Edit This Week', liffid: liffIds.thisweek });
+});
+
+app.post('/thisweek', async (req, res) => {
+  const userAccessToken = req.body.userAccessToken;
+  const fields = {
+    monin:   req.body['monday(in)']    || 'ไม่ใช้',
+    monout:  req.body['monday(out)']   || 'ไม่ใช้',
+    tuesin:  req.body['tuesday(in)']   || 'ไม่ใช้',
+    tuesout: req.body['tuesday(out)']  || 'ไม่ใช้',
+    wedin:   req.body['wednesday(in)'] || 'ไม่ใช้',
+    wedout:  req.body['wednesday(out)']|| 'ไม่ใช้',
+    thuin:   req.body['thursday(in)']  || 'ไม่ใช้',
+    thout:   req.body['thursday(out)'] || 'ไม่ใช้',
+    friin:   req.body['friday(in)']    || 'ไม่ใช้',
+    friout:  req.body['friday(out)']   || 'ไม่ใช้',
+    satin:   req.body['saturday(in)']  || 'ไม่ใช้',
+    satout:  req.body['saturday(out)'] || 'ไม่ใช้',
+    sunin:   req.body['sunday(in)']    || 'ไม่ใช้',
+    sunout:  req.body['sunday(out)']   || 'ไม่ใช้',
+  };
+
+  const profileResponse = await verifyAndFetchProfile(userAccessToken, res);
+  if (!profileResponse || !profileResponse.data || !profileResponse.data.userId) return;
+  const userid = profileResponse.data.userId;
+
+  const client = await pool.connect();
+  try {
+    const userResult = await client.query(
+      'SELECT location FROM chp.users WHERE userid = $1',
+      [userid]
+    );
+    if (userResult.rows.length === 0) {
+      return res.render('thisweek', { title: 'Edit This Week', liffid: liffIds.thisweek });
+    }
+
+    const { route } = chpDeriveRoute(userResult.rows[0].location);
+
+    const exists = await client.query('SELECT 1 FROM chp.thisweek WHERE userid = $1', [userid]);
+
+    if (exists.rows.length > 0) {
+      await client.query(
+        `UPDATE chp.thisweek SET
+           monday_inbound = $1, monday_outbound = $2,
+           tuesday_inbound = $3, tuesday_outbound = $4,
+           wednesday_inbound = $5, wednesday_outbound = $6,
+           thursday_inbound = $7, thursday_outbound = $8,
+           friday_inbound = $9, friday_outbound = $10,
+           saturday_inbound = $11, saturday_outbound = $12,
+           sunday_inbound = $13, sunday_outbound = $14,
+           route = $16, department_approval = $17
+         WHERE userid = $15`,
+        [
+          fields.monin, fields.monout, fields.tuesin, fields.tuesout,
+          fields.wedin, fields.wedout, fields.thuin, fields.thout,
+          fields.friin, fields.friout, fields.satin, fields.satout,
+          fields.sunin, fields.sunout, userid, route, 'pending',
+        ]
+      );
+    } else {
+      await client.query(
+        `INSERT INTO chp.thisweek (
+           userid,
+           monday_inbound, monday_outbound,
+           tuesday_inbound, tuesday_outbound,
+           wednesday_inbound, wednesday_outbound,
+           thursday_inbound, thursday_outbound,
+           friday_inbound, friday_outbound,
+           saturday_inbound, saturday_outbound,
+           sunday_inbound, sunday_outbound,
+           route, department_approval
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+        [
+          userid,
+          fields.monin, fields.monout, fields.tuesin, fields.tuesout,
+          fields.wedin, fields.wedout, fields.thuin, fields.thout,
+          fields.friin, fields.friout, fields.satin, fields.satout,
+          fields.sunin, fields.sunout, route, 'pending',
+        ]
+      );
+    }
+  } catch (err) {
+    console.error('POST /thisweek error:', err);
+    await telegramNotify(`CHP /thisweek error: ${err.message}`);
+  } finally {
+    client.release();
+  }
+
+  res.render('thisweek', { title: 'Edit This Week', liffid: liffIds.thisweek });
+});
+
+// --- LIFF page that shows the user's seat assignments for this week ---
+app.get('/detail', (req, res) => {
+  res.render('detail', { title: 'My Seat Details', liffid: liffIds.detail });
+});
+
+// --- LIFF JSON helpers ---
+
+// --- Internal helpers that mirror the Apps Script doGet shapes ---
+// Used to assemble the combined response below.
+
+async function chpVerifyUserData(client, userid) {
+  const result = await client.query(
+    `SELECT perid, userid, displayname, first_name, last_name, department,
+            location, approvalstatus
+     FROM chp.users WHERE userid = $1`,
+    [userid]
+  );
+  if (result.rows.length === 0) {
+    return {
+      status: 'success', approve: 'notmatch',
+      pernumber: 'no data', userid: 'no data', displayname: 'no data',
+      name: 'no data', surname: 'no data', department: 'no data', role: 'no data',
+    };
+  }
+  const r = result.rows[0];
+  return {
+    status: 'success',
+    approve: r.approvalstatus === 'approved' ? 'approved' : 'standby',
+    pernumber: r.perid,
+    userid: r.userid,
+    displayname: r.displayname,
+    name: r.first_name,
+    surname: r.last_name,
+    department: r.department,
+    role: r.location || '',
+  };
+}
+
+async function chpBookingData(client, table, userid) {
+  const result = await client.query(
+    `SELECT route, department_approval,
+            monday_inbound, monday_outbound,
+            tuesday_inbound, tuesday_outbound,
+            wednesday_inbound, wednesday_outbound,
+            thursday_inbound, thursday_outbound,
+            friday_inbound, friday_outbound,
+            saturday_inbound, saturday_outbound,
+            sunday_inbound, sunday_outbound
+     FROM ${table} WHERE userid = $1`,
+    [userid]
+  );
+  if (result.rows.length === 0) {
+    return {
+      status: 'success', route: '',
+      'monday(in)': '', 'monday(out)': '',
+      'tuesday(in)': '', 'tuesday(out)': '',
+      'wednesday(in)': '', 'wednesday(out)': '',
+      'thursday(in)': '', 'thursday(out)': '',
+      'friday(in)': '', 'friday(out)': '',
+      'saturday(in)': '', 'saturday(out)': '',
+      'sunday(in)': '', 'sunday(out)': '',
+      approve: '',
+    };
+  }
+  const r = result.rows[0];
+  return {
+    status: 'success',
+    route: r.route || '',
+    'monday(in)':    r.monday_inbound    || '',
+    'monday(out)':   r.monday_outbound   || '',
+    'tuesday(in)':   r.tuesday_inbound   || '',
+    'tuesday(out)':  r.tuesday_outbound  || '',
+    'wednesday(in)': r.wednesday_inbound || '',
+    'wednesday(out)':r.wednesday_outbound|| '',
+    'thursday(in)':  r.thursday_inbound  || '',
+    'thursday(out)': r.thursday_outbound || '',
+    'friday(in)':    r.friday_inbound    || '',
+    'friday(out)':   r.friday_outbound   || '',
+    'saturday(in)':  r.saturday_inbound  || '',
+    'saturday(out)': r.saturday_outbound || '',
+    'sunday(in)':    r.sunday_inbound    || '',
+    'sunday(out)':   r.sunday_outbound   || '',
+    approve: r.department_approval === 'approved' ? 'approved' : 'standby',
+  };
+}
+
+async function chpDetailThisweekData(client, userid) {
+  const thisweekResult = await client.query(
+    'SELECT department_approval FROM chp.thisweek WHERE userid = $1',
+    [userid]
+  );
+  const status = thisweekResult.rows.length
+    ? (thisweekResult.rows[0].department_approval === 'approved' ? 'approved' : 'standby')
+    : 'standby';
+
+  const seatResult = await client.query(
+    `SELECT route, day, bound, time, busnumber, seat
+     FROM chp.seattoday
+     WHERE userid = $1
+     ORDER BY day, time`,
+    [userid]
+  );
+
+  return {
+    status,
+    thisweekdata: seatResult.rows.map(r => ({
+      route: r.route,
+      daybound: `${r.day} ${r.bound}`,
+      time: r.time,
+      bus: r.busnumber,
+      seat: r.seat,
+    })),
+  };
+}
+
+// Combined endpoint matching the existing CHP frontend (chp.js) shape:
+//   GET /getuserdata?accesstoken=...&page=register|nextweek|thisweek
+// Returns { userData, booknextweekData?, bookthisweekData?, detailData? }.
+app.get('/getuserdata', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const accessToken = req.query.accesstoken;
+    const page = req.query.page;
+
+    const profileResponse = await verifyAndFetchProfile(accessToken, res);
+    if (!profileResponse || !profileResponse.data || !profileResponse.data.userId) return;
+
+    const userid = profileResponse.data.userId;
+    const response = { userData: await chpVerifyUserData(client, userid) };
+
+    if (page === 'nextweek') {
+      response.booknextweekData = await chpBookingData(client, 'chp.nextweek', userid);
+    } else if (page === 'thisweek') {
+      response.bookthisweekData = await chpBookingData(client, 'chp.thisweek', userid);
+      response.detailData = await chpDetailThisweekData(client, userid);
+    }
+
+    res.json(response);
+  } catch (err) {
+    console.error('GET /getuserdata error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/getuserdatathisweek', async (req, res) => {
+  const accessToken = req.query.accesstoken;
+  const profileResponse = await verifyAndFetchProfile(accessToken, res);
+  if (!profileResponse || !profileResponse.data || !profileResponse.data.userId) return;
+  const userid = profileResponse.data.userId;
+
+  const client = await pool.connect();
+  try {
+    const userResult = await client.query(
+      'SELECT approvalstatus, location FROM chp.users WHERE userid = $1',
+      [userid]
+    );
+    let status, location;
+    if (userResult.rows.length === 0) {
+      status = 'newuser';
+    } else {
+      status = userResult.rows[0].approvalstatus;
+      location = userResult.rows[0].location;
+    }
+
+    const scheduleResult = await client.query(
+      `SELECT monday_inbound, monday_outbound,
+              tuesday_inbound, tuesday_outbound,
+              wednesday_inbound, wednesday_outbound,
+              thursday_inbound, thursday_outbound,
+              friday_inbound, friday_outbound,
+              saturday_inbound, saturday_outbound,
+              sunday_inbound, sunday_outbound
+       FROM chp.thisweek WHERE userid = $1`,
+      [userid]
+    );
+
+    if (scheduleResult.rows.length === 0) {
+      return res.json({ status, bookthisweekdata: null });
+    }
+
+    const s = scheduleResult.rows[0];
+    res.json({
+      status,
+      bookthisweekdata: {
+        status: 'success',
+        location: location || 'N/A',
+        'monday(in)':    s.monday_inbound    || 'ไม่ใช้',
+        'monday(out)':   s.monday_outbound   || 'ไม่ใช้',
+        'tuesday(in)':   s.tuesday_inbound   || 'ไม่ใช้',
+        'tuesday(out)':  s.tuesday_outbound  || 'ไม่ใช้',
+        'wednesday(in)': s.wednesday_inbound || 'ไม่ใช้',
+        'wednesday(out)':s.wednesday_outbound|| 'ไม่ใช้',
+        'thursday(in)':  s.thursday_inbound  || 'ไม่ใช้',
+        'thursday(out)': s.thursday_outbound || 'ไม่ใช้',
+        'friday(in)':    s.friday_inbound    || 'ไม่ใช้',
+        'friday(out)':   s.friday_outbound   || 'ไม่ใช้',
+        'saturday(in)':  s.saturday_inbound  || 'ไม่ใช้',
+        'saturday(out)': s.saturday_outbound || 'ไม่ใช้',
+        'sunday(in)':    s.sunday_inbound    || 'ไม่ใช้',
+        'sunday(out)':   s.sunday_outbound   || 'ไม่ใช้',
+      },
+    });
+  } catch (err) {
+    console.error('GET /getuserdatathisweek error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/getuserdatanextweek', async (req, res) => {
+  const accessToken = req.query.accesstoken;
+  const profileResponse = await verifyAndFetchProfile(accessToken, res);
+  if (!profileResponse || !profileResponse.data || !profileResponse.data.userId) return;
+  const userid = profileResponse.data.userId;
+
+  const client = await pool.connect();
+  try {
+    const userResult = await client.query(
+      'SELECT approvalstatus, location FROM chp.users WHERE userid = $1',
+      [userid]
+    );
+    let status, location;
+    if (userResult.rows.length === 0) {
+      status = 'newuser';
+    } else {
+      status = userResult.rows[0].approvalstatus;
+      location = userResult.rows[0].location;
+    }
+
+    const scheduleResult = await client.query(
+      `SELECT monday_inbound, monday_outbound,
+              tuesday_inbound, tuesday_outbound,
+              wednesday_inbound, wednesday_outbound,
+              thursday_inbound, thursday_outbound,
+              friday_inbound, friday_outbound,
+              saturday_inbound, saturday_outbound,
+              sunday_inbound, sunday_outbound
+       FROM chp.nextweek WHERE userid = $1`,
+      [userid]
+    );
+
+    if (scheduleResult.rows.length === 0) {
+      return res.json({ status, booknextweekdata: null });
+    }
+
+    const s = scheduleResult.rows[0];
+    res.json({
+      status,
+      booknextweekdata: {
+        status: 'success',
+        location: location || 'N/A',
+        'monday(in)':    s.monday_inbound    || 'ไม่ใช้',
+        'monday(out)':   s.monday_outbound   || 'ไม่ใช้',
+        'tuesday(in)':   s.tuesday_inbound   || 'ไม่ใช้',
+        'tuesday(out)':  s.tuesday_outbound  || 'ไม่ใช้',
+        'wednesday(in)': s.wednesday_inbound || 'ไม่ใช้',
+        'wednesday(out)':s.wednesday_outbound|| 'ไม่ใช้',
+        'thursday(in)':  s.thursday_inbound  || 'ไม่ใช้',
+        'thursday(out)': s.thursday_outbound || 'ไม่ใช้',
+        'friday(in)':    s.friday_inbound    || 'ไม่ใช้',
+        'friday(out)':   s.friday_outbound   || 'ไม่ใช้',
+        'saturday(in)':  s.saturday_inbound  || 'ไม่ใช้',
+        'saturday(out)': s.saturday_outbound || 'ไม่ใช้',
+        'sunday(in)':    s.sunday_inbound    || 'ไม่ใช้',
+        'sunday(out)':   s.sunday_outbound   || 'ไม่ใช้',
+      },
+    });
+  } catch (err) {
+    console.error('GET /getuserdatanextweek error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// CHP detailthisweek: returns the user's per-passenger seat assignments
+// for the current week (from chp.seattoday after HR finalisation, falling
+// back to chp.seatdriver for the in-progress proposal).
+app.get('/getdetailthisweek', async (req, res) => {
+  const accessToken = req.query.accesstoken;
+  const profileResponse = await verifyAndFetchProfile(accessToken, res);
+  if (!profileResponse || !profileResponse.data || !profileResponse.data.userId) return;
+  const userid = profileResponse.data.userId;
+
+  const client = await pool.connect();
+  try {
+    const thisweekResult = await client.query(
+      'SELECT department_approval FROM chp.thisweek WHERE userid = $1',
+      [userid]
+    );
+    const approval = thisweekResult.rows.length
+      ? thisweekResult.rows[0].department_approval
+      : null;
+
+    const seatResult = await client.query(
+      `SELECT route, day, bound, time, busnumber AS bus, seat
+       FROM chp.seattoday
+       WHERE userid = $1
+       ORDER BY day, time`,
+      [userid]
+    );
+
+    res.json({
+      status: 'success',
+      detailThisWeekData: {
+        status: approval || 'pending',
+        thisweekdata: seatResult.rows.map(r => ({
+          route: r.route,
+          daybound: `${r.day} ${r.bound}`,
+          time: r.time,
+          bus: r.bus,
+          seat: r.seat,
+        })),
+      },
+    });
+  } catch (err) {
+    console.error('GET /getdetailthisweek error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+// --- Phase 2: Supervisor / HR pages and approval workflow ---
+
+// Shape each chp.{thisweek|nextweek} JOIN chp.users row into the 21-column
+// array form supervisor.ejs / hrnextweek.ejs expect:
+//   [perid, first_name, last_name, route, location,
+//    monday_in, monday_out, ..., sunday_out,
+//    approve(bool), supervisor]
+function chpBookingToRow(r) {
+  return [
+    r.perid || '',
+    r.first_name || '',
+    r.last_name || '',
+    r.route || '',
+    r.location || '',
+    r.monday_inbound    || '', r.monday_outbound    || '',
+    r.tuesday_inbound   || '', r.tuesday_outbound   || '',
+    r.wednesday_inbound || '', r.wednesday_outbound || '',
+    r.thursday_inbound  || '', r.thursday_outbound  || '',
+    r.friday_inbound    || '', r.friday_outbound    || '',
+    r.saturday_inbound  || '', r.saturday_outbound  || '',
+    r.sunday_inbound    || '', r.sunday_outbound    || '',
+    r.department_approval === 'approved',
+    r.supervisor || '',
+  ];
+}
+
+const BOOKING_COLUMNS_SQL = `
+  u.perid, u.first_name, u.last_name,
+  t.route, u.location,
+  t.monday_inbound, t.monday_outbound,
+  t.tuesday_inbound, t.tuesday_outbound,
+  t.wednesday_inbound, t.wednesday_outbound,
+  t.thursday_inbound, t.thursday_outbound,
+  t.friday_inbound, t.friday_outbound,
+  t.saturday_inbound, t.saturday_outbound,
+  t.sunday_inbound, t.sunday_outbound,
+  t.department_approval, u.supervisor
+`;
+
+// Supervisor approval page — shows their team's THIS week bookings.
+app.get('/supervisor', async (req, res) => {
+  const name = req.query.name || '';
+  try {
+    const result = await pool.query(
+      `SELECT ${BOOKING_COLUMNS_SQL}
+       FROM chp.thisweek t
+       JOIN chp.users u ON u.userid = t.userid
+       WHERE u.supervisor = $1
+       ORDER BY u.first_name, u.last_name`,
+      [name]
+    );
+    res.render('supervisor', {
+      title: 'Supervisor Approval',
+      data: { data: result.rows.map(chpBookingToRow) },
+      name,
+    });
+  } catch (err) {
+    console.error('GET /supervisor error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+// HR sees ALL next-week bookings (for visibility before Friday rollover).
+app.get('/hrnextweek', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT u.perid, u.first_name, u.last_name,
+              n.route, u.location,
+              n.monday_inbound, n.monday_outbound,
+              n.tuesday_inbound, n.tuesday_outbound,
+              n.wednesday_inbound, n.wednesday_outbound,
+              n.thursday_inbound, n.thursday_outbound,
+              n.friday_inbound, n.friday_outbound,
+              n.saturday_inbound, n.saturday_outbound,
+              n.sunday_inbound, n.sunday_outbound,
+              n.department_approval, u.supervisor
+       FROM chp.nextweek n
+       JOIN chp.users u ON u.userid = n.userid
+       ORDER BY u.first_name, u.last_name`
+    );
+    res.render('hrnextweek', {
+      title: 'hrnextweek',
+      data: { data: result.rows.map(chpBookingToRow) },
+    });
+  } catch (err) {
+    console.error('GET /hrnextweek error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+// POST /approve — supervisor (or HR) marks THIS week bookings as approved.
+// Matches Apps Script behavior: only flips rows that have a non-empty
+// pickup point (users without a location can't be packed onto a bus).
+app.post('/approve', async (req, res) => {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'ids must be a non-empty array' });
+  }
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `UPDATE chp.thisweek t
+          SET department_approval = 'approved'
+         FROM chp.users u
+        WHERE u.userid = t.userid
+          AND u.perid = ANY($1::text[])
+          AND COALESCE(u.location, '') <> ''`,
+      [ids]
+    );
+    res.json({ ok: true, updated: result.rowCount });
+  } catch (err) {
+    console.error('POST /approve error:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  } finally {
+    client.release();
+  }
+});
+
+// --- Bus list JSON endpoints (used by hr.ejs and drivercheck.ejs) ---
+
+// CHP appscript getBusnextweek() returned 5 columns from "drivernextweek":
+//   D-H = route, day+bound, time, bus_number, (something)
+// In the unified-DB model the equivalent of "next week's bus" is whatever's
+// currently in chp.busfromhr (HR-finalized). Match the shape with 5 columns.
+async function chpBusListRows(table) {
+  const result = await pool.query(
+    `SELECT route, day, bound, time, bus_number FROM ${table}
+     ORDER BY day, bound, time, bus_number`
+  );
+  // The original drivernextweek had 5 columns starting from column D:
+  //   [route, day+bound, time, bus_number, blank]
+  return result.rows.map(r => [
+    r.route || '',
+    `${r.day || ''} ${r.bound || ''}`.trim(),
+    r.time || '',
+    r.bus_number || '',
+    '',
+  ]);
+}
+
+app.get('/busnextweek', async (req, res) => {
+  try {
+    const busnextweek = await chpBusListRows('chp.busfromhr');
+    // CHP's response also carried a "status" cell from G7. We don't have
+    // an equivalent flag — return empty string so the frontend treats it
+    // as not-yet-approved.
+    res.json({ status: '', busnextweek });
+  } catch (err) {
+    console.error('GET /busnextweek error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// drivercheck.ejs hits /drivercheck and reads .busnextweek from the response.
+// Use the same shape; pull from chp.bustoday (today's pending bus list)
+// so drivers see what they need to drive today.
+app.get('/drivercheck', async (req, res) => {
+  try {
+    const busnextweek = await chpBusListRows('chp.bustoday');
+    res.json({ status: '', busnextweek });
+  } catch (err) {
+    console.error('GET /drivercheck error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+// --- Phase 3: pipeline endpoints (scheduled by external cron) ---
+
+async function chpAutoApprove() {
+  await pool.query("UPDATE chp.thisweek SET department_approval = 'approved'");
+}
+
+async function chpClearDriverState() {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM chp.driver');
+    await client.query('DELETE FROM chp.seatdriver');
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// --- Phase 4: bus packing ---
+//
+// Each daily run picks up approved bookings from chp.thisweek (joined with
+// chp.users for the pickup point), drops them into a seat-count matrix the
+// same shape as the Apps Script `util` / `sumthisweek` sheets, and writes
+// per-passenger placements to chp.seatdriver plus per-bus rows to chp.driver.
+//
+// Day numbering: 1=Mon ... 7=Sun (matches Apps Script's route1to10* callers).
+// "before" packs morning runs (07:30 / 08:15 / 10:30); "after" packs evening
+// (17:15 / 19:30 / 20:15). The four Apps Script functions become two args
+// (group + kind) into one shared chpPack().
+
+const DAY_NAMES_TH = [null, 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
+
+// Group A route names — these must line up with sumthisweek rows 17-35.
+const GROUP_A_ROUTES = [
+  'วัดสว่าง', 'แคราย', 'คลอง14', 'คลอง16', 'หมู่บ้านริมบึง', 'คลองเจ้า',
+  'หนามแดง', 'ประเวศ', 'แปดริ้ว', 'วัดเกาะ', 'กรุงเทพ', 'บางน้ำเปรี้ยว',
+  'รวม1+2+3+4', 'รวม1+2', 'รวม3+4', 'รวม5+6', 'รวม7+8', 'รวม9+10', 'รวม5+15',
+];
+
+// Group B route names — these must line up with sumthisweek rows 51-56.
+const GROUP_B_ROUTES = [
+  'สนามชัย', 'ดงน้อย', 'ลาดบัวขาว', 'แปลงยาว', 'รวม13+14', 'ลาดบัวขาว รถบัส',
+];
+
+// Load cap matrices (route × time-slot) from the sumthisweek CSV at startup.
+// rowCount × 42 numbers; columns: (day-1)*6 + slot for slot 0..5 where
+//   0:07:30(in) 1:08:15(out) 2:10:30(in) 3:17:15(out) 4:19:30(in) 5:20:15(out)
+function chpLoadCapsMatrix(filepath, startRow, rowCount) {
+  const raw = fs.readFileSync(path.join(__dirname, filepath), 'utf8');
+  const lines = raw.split(/\r?\n/);
+  const out = [];
+  for (let i = 0; i < rowCount; i++) {
+    const cols = (lines[startRow - 1 + i] || '').split(',');
+    const values = cols.slice(2).map(s => parseInt(s, 10) || 0);
+    while (values.length < 42) values.push(0);
+    out.push(values.slice(0, 42));
+  }
+  return out;
+}
+
+let chpCapsGroupA = null;
+let chpCapsGroupB = null;
+try {
+  chpCapsGroupA = chpLoadCapsMatrix('Shutterbus - sumthisweek.csv', 17, 19);
+  chpCapsGroupB = chpLoadCapsMatrix('Shutterbus - sumthisweek.csv', 51, 6);
+} catch (err) {
+  console.warn('Could not load CHP caps matrices — bus packing will refuse to run:', err.message);
+}
+
+function chpZerosMatrix(rows, cols) {
+  return Array.from({ length: rows }, () => new Array(cols).fill(0));
+}
+
+// "ลาดบัวขาว จุด 1-14" was stored on the booking row at booking time; collapse
+// back to the canonical pack-target name before looking up rindex.
+function chpCanonicalizeRoute(route) {
+  if (route === 'ลาดบัวขาว จุด 1-14') return 'ลาดบัวขาว';
+  if (route === 'แปลงยาว จุด 1-6')   return 'แปลงยาว';
+  if (route === 'สนามชัย จุด 1-3')    return 'สนามชัย';
+  if (route === 'ดงน้อย จุด 1-5')     return 'ดงน้อย';
+  return route;
+}
+
+function chpTimeToIndex(time, bound) {
+  if (bound === 'ขาเข้า' && time === '07:30') return 0;
+  if (bound === 'ขาออก' && time === '08:15') return 1;
+  if (bound === 'ขาเข้า' && time === '10:30') return 2;
+  if (bound === 'ขาออก' && time === '17:15') return 3;
+  if (bound === 'ขาเข้า' && time === '19:30') return 4;
+  return 5;
+}
+
+// Group A spillover when the base route is at cap.
+// Matches the chain in Apps Script route1to10berfore1400 / after1400.
+function chpSpilloverA(routeName, ref, matrix, caps) {
+  let rindex, route;
+  if (routeName === 'วัดสว่าง' || routeName === 'แคราย') {
+    rindex = 12; route = GROUP_A_ROUTES[12];
+    if (matrix[rindex][ref] == caps[rindex][ref]) {
+      rindex = 13; route = GROUP_A_ROUTES[13];
+    }
+  } else if (routeName === 'คลอง14' || routeName === 'คลอง16') {
+    rindex = 12; route = GROUP_A_ROUTES[12];
+    if (matrix[rindex][ref] == caps[rindex][ref]) {
+      rindex = 14; route = GROUP_A_ROUTES[14];
+    }
+  } else if (routeName === 'หมู่บ้านริมบึง') {
+    rindex = 18; route = GROUP_A_ROUTES[18];
+    if (matrix[rindex][ref] == caps[rindex][ref]) {
+      rindex = 15; route = GROUP_A_ROUTES[15];
+    }
+  } else if (routeName === 'คลองเจ้า') {
+    rindex = 15; route = GROUP_A_ROUTES[15];
+  } else if (routeName === 'หนามแดง' || routeName === 'ประเวศ') {
+    rindex = 16; route = GROUP_A_ROUTES[16];
+  } else if (routeName === 'แปดริ้ว' || routeName === 'วัดเกาะ') {
+    rindex = 17; route = GROUP_A_ROUTES[17];
+  } else {
+    return null;
+  }
+  return { rindex, route };
+}
+
+// Group B spillover (route11to14*).
+function chpSpilloverB(routeName, ref, matrix, caps) {
+  let rindex, route;
+  if (routeName === 'สนามชัย') {
+    rindex = 1; route = GROUP_B_ROUTES[1];
+    if (matrix[rindex][ref] == caps[rindex][ref]) {
+      rindex = 4; route = GROUP_B_ROUTES[4];
+    }
+  } else if (routeName === 'ดงน้อย') {
+    rindex = 0; route = GROUP_B_ROUTES[0];
+    if (matrix[rindex][ref] == caps[rindex][ref]) {
+      rindex = 4; route = GROUP_B_ROUTES[4];
+    }
+  } else if (routeName === 'ลาดบัวขาว') {
+    rindex = 5; route = GROUP_B_ROUTES[5];
+    if (matrix[rindex][ref] == caps[rindex][ref]) {
+      rindex = 3; route = GROUP_B_ROUTES[3];
+    }
+  } else if (routeName === 'แปลงยาว') {
+    rindex = 2; route = GROUP_B_ROUTES[2];
+    if (matrix[rindex][ref] == caps[rindex][ref]) {
+      rindex = 5; route = GROUP_B_ROUTES[5];
+    }
+  } else {
+    return null;
+  }
+  return { rindex, route };
+}
+
+const DAY_COLUMNS = [
+  null, // 0 = unused (day numbering is 1-indexed)
+  ['monday_inbound',    'monday_outbound'],
+  ['tuesday_inbound',   'tuesday_outbound'],
+  ['wednesday_inbound', 'wednesday_outbound'],
+  ['thursday_inbound',  'thursday_outbound'],
+  ['friday_inbound',    'friday_outbound'],
+  ['saturday_inbound',  'saturday_outbound'],
+  ['sunday_inbound',    'sunday_outbound'],
+];
+
+// Core packer used by all four Apps Script entry points.
+//   day:   1=Mon ... 7=Sun
+//   kind:  'before' (morning) | 'after' (evening)
+//   group: 'A' (CHP01-10/15/16 + combined) | 'B' (CHP11-14 + รถบัส)
+async function chpPack(day, kind, group) {
+  if (day < 1 || day > 7) return;
+  const today = DAY_NAMES_TH[day];
+
+  const caps = group === 'A' ? chpCapsGroupA : chpCapsGroupB;
+  const routes = group === 'A' ? GROUP_A_ROUTES : GROUP_B_ROUTES;
+  const spillover = group === 'A' ? chpSpilloverA : chpSpilloverB;
+  if (!caps) {
+    console.warn(`chpPack(${day},${kind},${group}) skipped — caps matrix not loaded`);
+    return;
+  }
+  const matrix = chpZerosMatrix(routes.length, 42);
+
+  const client = await pool.connect();
+  try {
+    const rs = await client.query(
+      `SELECT u.userid, u.perid, u.first_name, u.last_name, u.location,
+              t.route,
+              t.monday_inbound, t.monday_outbound,
+              t.tuesday_inbound, t.tuesday_outbound,
+              t.wednesday_inbound, t.wednesday_outbound,
+              t.thursday_inbound, t.thursday_outbound,
+              t.friday_inbound, t.friday_outbound,
+              t.saturday_inbound, t.saturday_outbound,
+              t.sunday_inbound, t.sunday_outbound
+       FROM chp.thisweek t
+       JOIN chp.users u ON u.userid = t.userid
+       WHERE t.department_approval = 'approved'
+         AND COALESCE(u.location, '') <> ''
+       ORDER BY u.location, u.first_name`
+    );
+
+    const [colIn, colOut] = DAY_COLUMNS[day];
+
+    await client.query('BEGIN');
+
+    rowLoop:
+    for (const row of rs.rows) {
+      const route0 = chpCanonicalizeRoute(row.route);
+      const isGroupB = ['สนามชัย', 'ดงน้อย', 'ลาดบัวขาว', 'แปลงยาว'].includes(route0);
+      if (group === 'A' && isGroupB) continue;
+      if (group === 'B' && !isGroupB) continue;
+
+      for (const bound of ['ขาเข้า', 'ขาออก']) {
+        const time = bound === 'ขาเข้า' ? row[colIn] : row[colOut];
+        const index = chpTimeToIndex(time, bound);
+
+        if (kind === 'before' && index >= 3) continue;
+        if (kind === 'after'  && index < 3)  continue;
+        if (!time || time === 'ไม่ใช้') continue;
+
+        const ref = (day - 1) * 6 + index;
+
+        let route = route0;
+        let rindex = routes.indexOf(route);
+        if (rindex < 0) continue;
+
+        let pax = matrix[rindex][ref];
+        if (pax == caps[rindex][ref]) {
+          const sp = spillover(route, ref, matrix, caps);
+          if (sp) { rindex = sp.rindex; route = sp.route; pax = matrix[rindex][ref]; }
+        } else if (pax > caps[rindex][ref]) {
+          console.error(`pack error ${route} ${kind} ${today} ref=${ref}`);
+          await client.query('ROLLBACK');
+          const u = (process.env.ERROR_NOTIFY_USER || '').trim();
+          if (u) await sendPushMessage([u], `จัดรถไม่สำเร็จ ${route} ${kind}1400 ${today}`);
+          return;
+        }
+
+        pax = pax + 1;
+        const busSize = route === 'ลาดบัวขาว รถบัส' ? 43 : 13;
+        let seat = pax % busSize;
+        if (seat === 0) seat = busSize;
+        const busnumber = Math.ceil(pax / busSize);
+
+        await client.query(
+          `INSERT INTO chp.seatdriver (userid, perid, first_name, last_name, route, location, day, bound, time, busnumber, seat)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [row.userid, row.perid, row.first_name, row.last_name,
+           route, row.location, today, bound, time, busnumber, seat]
+        );
+
+        matrix[rindex][ref] = pax;
+
+        if (seat === 1) {
+          await client.query(
+            `INSERT INTO chp.driver (route, day, bound, time, bus_number) VALUES ($1,$2,$3,$4,$5)`,
+            [route, today, bound, time, busnumber]
+          );
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error(`chpPack(${day},${kind},${group}) failed:`, err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function chpPackRoute1to10Before1400(day) { return chpPack(day, 'before', 'A'); }
+async function chpPackRoute1to10After1400(day)  { return chpPack(day, 'after',  'A'); }
+async function chpPackRoute11to14Before1400(day) { return chpPack(day, 'before', 'B'); }
+async function chpPackRoute11to14After1400(day)  { return chpPack(day, 'after',  'B'); }
+
+// Convert UTC server time to Bangkok day-of-week (0=Sun..6=Sat).
+function bangkokDayOfWeek(d = new Date()) {
+  const bkk = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+  return bkk.getUTCDay();
+}
+
+// GET /weekly — rollover thisweek→lastweek, nextweek→thisweek, clear nextweek.
+// Apps Script invokes this inline from calculatedaily on Friday; expose it
+// separately for manual triggering or a dedicated Friday cron.
+app.get('/weekly', async (req, res) => {
+  try {
+    await chpTransferThisweekToLastweek();
+    await chpTransferNextweekToThisweek();
+    await sendPushMessage(adminLineUsers, 'CHP weekly rollover เสร็จ');
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('GET /weekly error:', err);
+    const u = (process.env.ERROR_NOTIFY_USER || '').trim();
+    if (u) await sendPushMessage([u], `CHP /weekly error: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /daliy — main daily scheduler. External cron triggers at 14:30 Asia/Bangkok
+// Monday–Friday. Mirrors calculatedaily() in the Apps Script: Mon–Thu pack
+// today-PM + tomorrow-AM; Friday packs Fri/Sat/Sun then rollover then Mon-AM.
+app.get('/daliy', async (req, res) => {
+  const dayOfWeek = bangkokDayOfWeek(); // 0=Sun..6=Sat
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    return res.json({ ok: true, skipped: 'weekend' });
+  }
+
+  try {
+    await chpAutoApprove();
+    await chpClearDriverState();
+
+    if (dayOfWeek === 5) {
+      // Friday: pack PM of Fri/Sat/Sun + AM of Sat/Sun, rollover, then AM of Mon.
+      await chpPackRoute1to10After1400(5);
+      await chpPackRoute11to14After1400(5);
+      await chpPackRoute1to10Before1400(6);
+      await chpPackRoute11to14Before1400(6);
+      await chpPackRoute1to10After1400(6);
+      await chpPackRoute11to14After1400(6);
+      await chpPackRoute1to10Before1400(7);
+      await chpPackRoute11to14Before1400(7);
+      await chpPackRoute1to10After1400(7);
+      await chpPackRoute11to14After1400(7);
+
+      await chpTransferThisweekToLastweek();
+      await chpTransferNextweekToThisweek();
+      await chpAutoApprove();
+
+      await chpPackRoute1to10Before1400(1);
+      await chpPackRoute11to14Before1400(1);
+    } else {
+      // Mon–Thu: pack today's PM + tomorrow's AM
+      await chpPackRoute1to10After1400(dayOfWeek);
+      await chpPackRoute1to10Before1400(dayOfWeek + 1);
+      await chpPackRoute11to14After1400(dayOfWeek);
+      await chpPackRoute11to14Before1400(dayOfWeek + 1);
+    }
+
+    await sendPushMessage(adminLineUsers, `CHP daliy pack เสร็จ (วัน ${dayOfWeek})`);
+    res.json({ ok: true, day: dayOfWeek });
+  } catch (err) {
+    console.error('GET /daliy error:', err);
+    const u = (process.env.ERROR_NOTIFY_USER || '').trim();
+    if (u) await sendPushMessage([u], `วันนี้ทำงานไม่สำเร็จครับ: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /driversendtohr — driver dispatches today's plan to HR. Mirrors the
+// Apps Script approve() function: promote chp.driver → chp.bustoday and
+// chp.seatdriver → chp.seattoday, then ping the admin LINE recipients.
+app.post('/driversendtohr', async (req, res) => {
+  try {
+    await chpTransferDriverToBustoday();
+    await chpTransferSeatdriverToSeattoday();
+    await pool.query('DELETE FROM chp.driver');
+    await pool.query('DELETE FROM chp.seatdriver');
+    await sendPushMessage(adminLineUsers, 'จัดรถ CHP ส่งข้อมูลให้ HR');
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /driversendtohr error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+// --- TODO: Phase 4 (bus packing — calculatebus equivalents) ---
+// --- Phase 5: LINE webhook ---
+
+// HMAC SHA256 over the raw body using CHANNELSECRET; LINE sends the
+// expected digest in X-Line-Signature.
+function validateSignatureMiddleware(req, res, next) {
+  const signature = req.get('X-Line-Signature');
+  if (!signature) return res.status(400).send('Signature missing');
+  if (!channelSecret) return res.status(500).send('Server missing CHANNELSECRET');
+
+  const body = JSON.stringify(req.body);
+  const hash = crypto.createHmac('sha256', channelSecret).update(body).digest('base64');
+  if (hash !== signature) return res.status(401).send('Invalid signature');
+  next();
+}
+
+async function chpReplyMenu(replyToken) {
+  if (!accessToken) return;
+  try {
+    await axios.post(
+      'https://api.line.me/v2/bot/message/reply',
+      {
+        replyToken,
+        messages: [{
+          type: 'flex',
+          altText: 'CHP menu',
+          contents: {
+            type: 'bubble',
+            body: {
+              type: 'box', layout: 'vertical',
+              contents: [{ type: 'text', text: 'กรุณาเลือกเมนู', weight: 'bold', size: 'xl' }],
+            },
+            footer: {
+              type: 'box', layout: 'vertical', spacing: 'sm', flex: 0,
+              contents: [{
+                type: 'button',
+                action: { type: 'uri', label: 'Check in', uri: 'https://liff.line.me/2002711129-MPLvkR4W' },
+              }],
+            },
+          },
+        }],
+      },
+      { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` } }
+    );
+  } catch (err) {
+    console.error('chpReplyMenu error:', err.response ? err.response.data : err.message);
+  }
+}
+
+async function chpReplyLocation(replyToken) {
+  if (!accessToken) return;
+  try {
+    await axios.post(
+      'https://api.line.me/v2/bot/message/reply',
+      {
+        replyToken,
+        messages: [{
+          type: 'location', title: 'CHP Resonac',
+          address: 'Chachoengsao, Thailand',
+          // TODO: update to real CHP plant coordinates
+          latitude: 13.6904, longitude: 101.0779,
+        }],
+      },
+      { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` } }
+    );
+  } catch (err) {
+    console.error('chpReplyLocation error:', err.response ? err.response.data : err.message);
+  }
+}
+
+async function chpHandleEvent(event) {
+  if (event.type !== 'message') return;
+  const msg = event.message;
+  if (msg.type !== 'text') return;
+  if (msg.text === '/checkin') return chpReplyMenu(event.replyToken);
+  if (msg.text === 'location') return chpReplyLocation(event.replyToken);
+}
+
+app.post('/callback', validateSignatureMiddleware, async (req, res) => {
+  const events = req.body.events;
+  if (!Array.isArray(events)) return res.status(400).end();
+  try {
+    await Promise.all(events.map(chpHandleEvent));
+    res.end();
+  } catch (err) {
+    console.error('/callback error:', err);
+    res.status(500).end();
+  }
+});
+// --- Phase 6: CSV/Excel exports for HR ---
+//
+// Each endpoint writes a temporary file to the project root, serves it via
+// res.download(), then unlinks it. Caller passes a fully-qualified table
+// name (e.g. "chp.busfromhr") and the desired download filename.
+
+async function chpDownloadExcel(tableName, filename, res) {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`SELECT * FROM ${tableName}`);
+    if (result.rows.length === 0) return res.status(404).send('No data available');
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(filename.replace(/\.xlsx$/, ''));
+    worksheet.columns = Object.keys(result.rows[0]).map(key => ({ header: key, key }));
+    result.rows.forEach(row => worksheet.addRow(row));
+
+    const filePath = path.join(__dirname, filename);
+    await workbook.xlsx.writeFile(filePath);
+    res.download(filePath, filename, (err) => {
+      if (err) console.error('chpDownloadExcel send error:', err);
+      fs.unlink(filePath, () => {});
+    });
+  } catch (err) {
+    console.error(`chpDownloadExcel(${tableName}) error:`, err);
+    res.status(500).send('Internal Server Error');
+  } finally {
+    client.release();
+  }
+}
+
+async function chpDownloadCsv(tableName, filename, res) {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`SELECT * FROM ${tableName}`);
+    if (result.rows.length === 0) return res.status(404).send('No data available');
+
+    const filePath = path.join(__dirname, filename);
+    const csvWriter = createCsvWriter({
+      path: filePath,
+      header: Object.keys(result.rows[0]).map(k => ({ id: k, title: k })),
+    });
+    await csvWriter.writeRecords(result.rows);
+    res.download(filePath, filename, (err) => {
+      if (err) console.error('chpDownloadCsv send error:', err);
+      fs.unlink(filePath, () => {});
+    });
+  } catch (err) {
+    console.error(`chpDownloadCsv(${tableName}) error:`, err);
+    res.status(500).send('Internal Server Error');
+  } finally {
+    client.release();
+  }
+}
+
+// Driver-side current proposals
+app.get('/download-excel-driver',     (req, res) => chpDownloadExcel('chp.driver',     'driver.xlsx',     res));
+app.get('/download-excel-seatdriver', (req, res) => chpDownloadExcel('chp.seatdriver', 'seatdriver.xlsx', res));
+app.get('/download-csv-driver',       (req, res) => chpDownloadCsv  ('chp.driver',     'driver.txt',      res));
+app.get('/download-csv-seatdriver',   (req, res) => chpDownloadCsv  ('chp.seatdriver', 'seatdriver.txt',  res));
+
+// HR-pending (sent by driver via /driversendtohr)
+app.get('/download-excel-bustoday',   (req, res) => chpDownloadExcel('chp.bustoday',   'bustoday.xlsx',   res));
+app.get('/download-excel-seattoday',  (req, res) => chpDownloadExcel('chp.seattoday',  'seattoday.xlsx',  res));
+app.get('/download-csv-bustoday',     (req, res) => chpDownloadCsv  ('chp.bustoday',   'bustoday.txt',    res));
+app.get('/download-csv-seattoday',    (req, res) => chpDownloadCsv  ('chp.seattoday',  'seattoday.txt',   res));
+
+// HR-finalized
+app.get('/download-excel-busfromhr',  (req, res) => chpDownloadExcel('chp.busfromhr',  'busfromhr.xlsx',  res));
+app.get('/download-excel-seatfromhr', (req, res) => chpDownloadExcel('chp.seatfromhr', 'seatfromhr.xlsx', res));
+app.get('/download-csv-busfromhr',    (req, res) => chpDownloadCsv  ('chp.busfromhr',  'busfromhr.txt',   res));
+app.get('/download-csv-seatfromhr',   (req, res) => chpDownloadCsv  ('chp.seatfromhr', 'seatfromhr.txt',  res));
+
+const PORT = Number(process.env.PORT) || 3000;
+app.listen(PORT, () => {
+  console.log(`CHP shuttle-bus server listening on :${PORT}`);
+  telegramNotify('CHP Bus deploy successful 🚀').catch(() => {});
+});

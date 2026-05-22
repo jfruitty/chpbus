@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Hr NextWeek</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link href="/css/styles.css" rel="stylesheet" type="text/css">
+    <script src="https://static.line-scdn.net/liff/edge/versions/2.13.0/sdk.js"></script>
+</head>
+
+<body>
+    <div class="loader" id="loader"></div>
+    <div class="loading-text" id="loading-text">กำลังตรวจสอบสิทธิ์...</div>
+
+    <script>
+
+        async function runApp() {
+            //const idToken = liff.getIDToken();
+            //const accessToken = liff.getAccessToken();
+
+            try {
+
+                //const profile = await liff.getProfile();
+                //const response = await fetch(`https://resonac-bus.onrender.com/newnextweek?accesstoken=${accessToken}`);
+                //const data = await response.json();
+
+                let data = {
+                    "userData": {
+                        "approve": "approved"
+                    }, "bookingnextweek": [
+                         {
+                             "id": "1",
+                             "day": "day",
+                             "bound": "bound",
+                             "time": "time",
+                             "route": "route",
+                             "point": "point",
+                             "status": "status",
+                         }, {
+                             "id": "2",
+                             "day": "day",
+                             "bound": "bound",
+                             "time": "time",
+                             "route": "route",
+                             "point": "point",
+                             "status": "status",
+                         },
+                    ]
+                }
+
+                if (data.userData.approve == 'approved') {
+
+                    document.getElementById('loader').style.display = 'none';
+                    document.getElementById('loading-text').style.display = 'none';
+
+                    createBookinglist(data)
+                    //createBookingform(data)
+
+                } else if (data.userData.approve == 'standby') {
+                    document.getElementById('loader').style.display = 'none';
+                    document.getElementById('loading-text').style.display = 'none';
+
+                    var status = 'รอแอดมินยืนยัน';
+
+                    createProfileCard(profile.pictureUrl, profile.displayName, status);
+
+                } else {
+
+                    document.getElementById('loader').style.display = 'none';
+                    document.getElementById('loading-text').style.display = 'none';
+
+                    var status = 'กรุณาลงทะเบียน';
+
+                    createProfileCard(profile.pictureUrl, profile.displayName, status);
+
+                }
+
+            } catch (error) {
+                console.error("Error:", error);
+            }
+
+        }
+
+        runApp()
+
+
+        //liff.init({ liffId: '<%= liffid %>' }, () => {
+        //    if (liff.isLoggedIn()) {
+        //        runApp()
+        //    } else {
+        //        liff.login();
+        //
+        //    }
+        //}).catch((err) => {
+        //    console.log(err.code, err.message);
+        //});
+
+
+        function createProfileCard(profilepic, name, status) {
+
+            const card = document.createElement('div');
+            card.className = 'card';
+
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
+
+            const profilePictureContainer = document.createElement('div');
+
+            const profilePicture = document.createElement('img');
+            profilePicture.src = profilepic;
+            profilePicture.alt = 'Profile Picture';
+
+            profilePictureContainer.appendChild(profilePicture);
+
+            const cardText = document.createElement('div');
+            cardText.className = 'card-text';
+
+            const nameParagraph = document.createElement('p');
+            nameParagraph.textContent = 'ชื่อ: ' + name;
+
+
+            const statusParagraph = document.createElement('p');
+            statusParagraph.textContent = 'สถานะ: ' + status;
+
+            cardText.appendChild(nameParagraph);
+            cardText.appendChild(statusParagraph);
+
+            cardBody.appendChild(profilePictureContainer);
+            cardBody.appendChild(cardText);
+
+            card.appendChild(cardBody);
+            document.body.appendChild(card);
+        }
+
+
+        function createBookinglist(data) {
+
+
+            const h1 = document.createElement('h1');
+            h1.textContent = 'Your Booking';
+
+            document.body.appendChild(h1);
+
+            if (data.bookingnextweek.length == 0) {
+
+
+                const cardId = document.createElement('div');
+                cardId.className = 'booking-card';
+
+                const cardIdBody = document.createElement('div');
+                cardIdBody.className = 'card-body';
+
+                const bookingIdDetails = document.createElement('div');
+                bookingIdDetails.className = 'booking-details';
+
+                const headday = document.createElement('div');
+                headday.style = "text-align: center;";
+                headday.textContent = `ยังไม่พบการจองครับ`;
+
+                bookingIdDetails.appendChild(headday);
+
+                cardIdBody.appendChild(bookingIdDetails);
+
+                cardId.appendChild(cardIdBody);
+                document.body.appendChild(cardId);
+
+
+            } else {
+                for (const booking of data.bookingnextweek) {
+
+
+                    const cardId = document.createElement('div');
+                    cardId.className = 'booking-card';
+
+                    const cardIdBody = document.createElement('div');
+                    cardIdBody.className = 'card-body';
+
+                    const bookingIdDetails = document.createElement('div');
+                    bookingIdDetails.className = 'booking-details';
+
+                    const headday = document.createElement('div');
+                    headday.style = "text-align: center;";
+                    headday.textContent = `หมายเลขการจอง : ${booking[`id`]}`;
+
+                    bookingIdDetails.appendChild(headday);
+
+                    cardIdBody.appendChild(bookingIdDetails);
+
+                    cardId.appendChild(cardIdBody);
+                    document.body.appendChild(cardId);
+
+                    const card = document.createElement('div');
+                    card.className = 'booking-card slide-from-top';
+                    card.id = `${booking[`id`]}`;
+                    card.style = "margin-top: -7px;";
+
+
+                    cardId.addEventListener('click', function () {
+
+                        if (document.getElementById(`${booking[`id`]}`).getAttribute("class").includes("active")) {
+                            document.getElementById(`${booking[`id`]}`).classList.remove('active');
+                        } else {
+                            document.getElementById(`${booking[`id`]}`).classList.add('active');
+                        }
+
+                    });
+
+                    const cardBody = document.createElement('div');
+                    cardBody.className = 'card-body';
+
+                    const bookingDetails = document.createElement('div');
+                    bookingDetails.className = 'booking-details';
+
+                    const detailDiv = document.createElement('div');
+                    detailDiv.style = "display: flex;width: 100%;flex-direction: column;";
+
+                    const detailday = document.createElement('div');
+                    detailday.textContent = `วัน : ${booking[`day`]}`;
+                    const detailbound = document.createElement('div');
+                    detailbound.textContent = `ขา : ${booking[`bound`]}`;
+                    const detailtime = document.createElement('div');
+                    detailtime.textContent = `เวลา : ${booking[`time`]}`;
+                    const detailroute = document.createElement('div');
+                    detailroute.textContent = `สาย : ${booking[`route`]}`;
+                    const detailpoint = document.createElement('div');
+                    detailpoint.textContent = `จุดขึ้น : ${booking[`point`]}`;
+                    const detailstatus = document.createElement('div');
+                    detailstatus.textContent = `สถานะ : ${booking[`status`]}`;
+
+                    detailDiv.appendChild(detailday)
+                    detailDiv.appendChild(detailbound)
+                    detailDiv.appendChild(detailtime)
+                    detailDiv.appendChild(detailroute)
+                    detailDiv.appendChild(detailpoint)
+                    detailDiv.appendChild(detailstatus)
+
+                    bookingDetails.appendChild(detailDiv);
+                    cardBody.appendChild(bookingDetails);
+                    card.appendChild(cardBody);
+                    document.body.appendChild(card);
+                }
+
+            }
+
+            const divbutton = document.createElement('div');
+            divbutton.style = "display: flex; justify-content: space-between;width: 300px;";
+
+            const BookButton = document.createElement('button');
+            BookButton.type = 'edit';
+            BookButton.textContent = 'จองรถ';
+
+            BookButton.addEventListener('click', function () {
+
+                const first3Children = Array.from(document.body.children).slice(0, 3);
+
+                document.body.innerHTML = "";
+
+                first3Children.forEach(child => document.body.appendChild(child));
+
+                createBookingform(data);
+
+            });
+
+            divbutton.appendChild(BookButton);
+
+            if (data.bookingnextweek.length != 0) {
+
+                const cancleButton = document.createElement('button');
+                cancleButton.type = 'edit';
+                cancleButton.textContent = 'ยกเลิกจอง';
+
+                cancleButton.addEventListener('click', function () {
+
+                    const first3Children = Array.from(document.body.children).slice(0, 3);
+
+                    document.body.innerHTML = "";
+
+                    first3Children.forEach(child => document.body.appendChild(child));
+
+                    createCancleform(data);
+
+                });
+
+                divbutton.appendChild(cancleButton);
+            }
+
+
+
+            document.body.appendChild(divbutton);
+
+
+        }
+
+        function createBookingform(data) {
+
+            const h1 = document.createElement('h1');
+            h1.textContent = 'Booking Nextweek';
+
+            document.body.appendChild(h1);
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/newnextweek';
+
+            document.body.appendChild(form);
+
+            // Labels and datalist elements for "Section"
+            var labelDay = document.createElement("label");
+            labelDay.for = "day";
+            labelDay.innerText = "วัน";
+            form.appendChild(labelDay);
+
+            var selectDay = document.createElement("select");
+            selectDay.id = "day";
+            selectDay.name = "day";
+            selectDay.required = true;
+
+            var DayOptions = ["จันทร์", "อังคาร", "พุธ", "พฤหัส", "ศุกร์", "เสาร์", "อาทิตย์"];
+
+            DayOptions.forEach(function (optionText, index) {
+                var option = document.createElement("option");
+                option.value = optionText;
+                option.innerText = optionText;
+                selectDay.appendChild(option);
+            });
+
+            form.appendChild(selectDay);
+
+
+            // Labels and datalist elements for "Section"
+            var labelBound = document.createElement("label");
+            labelBound.for = "bound";
+            labelBound.innerText = "ขา";
+            form.appendChild(labelBound);
+
+            var selectBound = document.createElement("select");
+            selectBound.id = "bound";
+            selectBound.name = "bound";
+            selectBound.required = true;
+
+            var BoundOptions = ["เข้า", "ออก"];
+
+            BoundOptions.forEach(function (optionText, index) {
+                var option = document.createElement("option");
+                option.value = optionText;
+                option.innerText = optionText;
+                selectBound.appendChild(option);
+            });
+
+            form.appendChild(selectBound);
+
+            // Labels and datalist elements for "Section"
+            var labelTime = document.createElement("label");
+            labelTime.for = "time";
+            labelTime.innerText = "เวลา";
+            form.appendChild(labelTime);
+
+            var selectTime = document.createElement("select");
+            selectTime.id = "time";
+            selectTime.name = "time";
+            selectTime.required = true;
+
+            var TimeOptions = ["08:00", "17:00", "20:00"];
+
+            TimeOptions.forEach(function (optionText, index) {
+                var option = document.createElement("option");
+                option.value = optionText;
+                option.innerText = optionText;
+                selectTime.appendChild(option);
+            });
+
+            form.appendChild(selectTime);
+
+            // Labels and datalist elements for "Section"
+            var labelRoute = document.createElement("label");
+            labelRoute.for = "route";
+            labelRoute.innerText = "สายรถ";
+            form.appendChild(labelRoute);
+
+            var selectRoute = document.createElement("select");
+            selectRoute.id = "route";
+            selectRoute.name = "route";
+            selectRoute.required = true;
+
+            var RouteOptions = ["วัดสว่าง", "แคราย", "คลอง14", "คลอง 14 (เสริม)", "หมู่บ้านริมบึง", "คลองเจ้า", "หนามแดง", "ประเวศ", "แปดริ้ว", "วัดเกาะ", "แปลงยาว", "ลาดบัวขาว รถบัส", "ดงน้อย", "สนามชัย", "กรุงเทพ", "บางน้ำเปรี้ยว"];
+
+            RouteOptions.forEach(function (optionText, index) {
+                var option = document.createElement("option");
+                option.value = optionText;
+                option.innerText = optionText;
+
+                selectRoute.appendChild(option);
+            });
+
+            form.appendChild(selectRoute);
+
+
+            // Labels and datalist elements for "Section"
+            var labelPoint = document.createElement("label");
+            labelPoint.for = "point";
+            labelPoint.innerText = "จุดขึ้น";
+            form.appendChild(labelPoint);
+
+            var inputPoint = document.createElement("input");
+            inputPoint.type = "text";
+            inputPoint.id = "point";
+            inputPoint.name = "point";
+
+            form.appendChild(inputPoint);
+
+
+            const inputAccessToken = document.createElement('input');
+            inputAccessToken.type = 'hidden';
+            inputAccessToken.id = 'userAccessToken';
+            inputAccessToken.name = 'userAccessToken';
+            inputAccessToken.value = 'eyJhbGciOiJIUzI1NiJ9.ZglcUjHT_9FAc-AtToerF98MoQ293G3UnGBfdsynRO-2RV6D4dwP3rUwHwPwcY4LGuy0qJFLK6sTp88kV0ms2UuF1MCeVG9yRzum6eEvGlmZ0eyjPZnl2h6HxWbQON7wDXyop2q26FG3NiYRZC7k_mqCwyuvtdM_VvO8Xe4d9b4.cnuIDvvZG2XMYxiA_TGoyfY6RvBUzBypcDaa1eeT4Hg';
+            inputAccessToken.required = true;
+
+
+            form.appendChild(inputAccessToken);
+
+
+            const divbutton = document.createElement('div');
+            divbutton.style = "display: flex; justify-content: space-between;width: 300px;";
+
+            const backButton = document.createElement('button');
+            backButton.type = 'edit';
+            backButton.textContent = 'กลับ';
+
+            backButton.addEventListener('click', function () {
+
+                const first3Children = Array.from(document.body.children).slice(0, 3);
+
+                document.body.innerHTML = "";
+
+                first3Children.forEach(child => document.body.appendChild(child));
+
+                createBookinglist(data);
+
+            });
+
+            divbutton.appendChild(backButton);
+
+            const submitButton = document.createElement('button');
+            submitButton.type = 'edit';
+            submitButton.textContent = 'ส่งฟอร์ม';
+
+            submitButton.addEventListener('click', function () {
+
+                form.submit();
+
+            });
+
+            divbutton.appendChild(submitButton);
+
+            document.body.appendChild(divbutton);
+
+
+        }
+
+        function createCancleform(data) {
+
+            const h1 = document.createElement('h1');
+            h1.textContent = 'Cancle Nextweek';
+
+            document.body.appendChild(h1);
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/canclenextweek';
+
+            document.body.appendChild(form);
+
+            // Labels and datalist elements for "Section"
+            var labelId = document.createElement("label");
+            labelId.for = "id";
+            labelId.innerText = "หมายเลขการจองที่ต้องการยกเลิก";
+            form.appendChild(labelId);
+
+            var selectId = document.createElement("select");
+            selectId.id = "id";
+            selectId.name = "id";
+            selectId.required = true;
+
+            var idOptions = ["1", "2"];
+
+            idOptions.forEach(function (optionText, index) {
+                var option = document.createElement("option");
+                option.value = optionText;
+                option.innerText = optionText;
+                selectId.appendChild(option);
+            });
+
+            form.appendChild(selectId);
+
+            const divbutton = document.createElement('div');
+            divbutton.style = "display: flex; justify-content: space-between;width: 300px;";
+
+            const backButton = document.createElement('button');
+            backButton.type = 'edit';
+            backButton.textContent = 'กลับ';
+
+            backButton.addEventListener('click', function () {
+
+                const first3Children = Array.from(document.body.children).slice(0, 3);
+
+                document.body.innerHTML = "";
+
+                first3Children.forEach(child => document.body.appendChild(child));
+
+                createBookinglist(data);
+
+            });
+
+            divbutton.appendChild(backButton);
+
+            const submitButton = document.createElement('button');
+            submitButton.type = 'edit';
+            submitButton.textContent = 'ส่งฟอร์ม';
+
+            divbutton.appendChild(submitButton);
+
+            submitButton.addEventListener('click', function () {
+
+                form.submit();
+
+            });
+
+            document.body.appendChild(divbutton);
+
+
+        }
+
+
+        function submitFormAsync() {
+            return new Promise((resolve, reject) => {
+
+                setTimeout(() => {
+                    console.log('Form submitted successfully');
+                    resolve();
+
+                }, 10000);
+            });
+        }
+
+    </script>
+
+
+</body>
+
+</html>
