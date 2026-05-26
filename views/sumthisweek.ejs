@@ -43,7 +43,7 @@
                 <div class="actions">
                 </div>
             </header>
-            
+
             <section class="table-section">
                 <table class="approval-table">
                     <thead>
@@ -51,49 +51,42 @@
                             <th>สายรถ</th>
                             <th>🟡 07:30</th>
                             <th>🟡 19:30</th>
-                            <th>🟡 05:15</th>
                             <th>🟡 08:15</th>
                             <th>🟡 10:30</th>
                             <th>🟡 17:15</th>
                             <th>🟡 20:15</th>
                             <th>🌸 07:30</th>
                             <th>🌸 19:30</th>
-                            <th>🌸 05:15</th>
                             <th>🌸 08:15</th>
                             <th>🌸 10:30</th>
                             <th>🌸 17:15</th>
                             <th>🌸 20:15</th>
                             <th>🟢 07:30</th>
                             <th>🟢 19:30</th>
-                            <th>🟢 05:15</th>
                             <th>🟢 08:15</th>
                             <th>🟢 10:30</th>
                             <th>🟢 17:15</th>
                             <th>🟢 20:15</th>
                             <th>🟠 07:30</th>
                             <th>🟠 19:30</th>
-                            <th>🟠 05:15</th>
                             <th>🟠 08:15</th>
                             <th>🟠 10:30</th>
                             <th>🟠 17:15</th>
                             <th>🟠 20:15</th>
                             <th>🔵 07:30</th>
                             <th>🔵 19:30</th>
-                            <th>🔵 05:15</th>
                             <th>🔵 08:15</th>
                             <th>🔵 10:30</th>
                             <th>🔵 17:15</th>
                             <th>🔵 20:15</th>
                             <th>🟣 07:30</th>
                             <th>🟣 19:30</th>
-                            <th>🟣 05:15</th>
                             <th>🟣 08:15</th>
                             <th>🟣 10:30</th>
                             <th>🟣 17:15</th>
                             <th>🟣 20:15</th>
                             <th>🔴 07:30</th>
                             <th>🔴 19:30</th>
-                            <th>🔴 05:15</th>
                             <th>🔴 08:15</th>
                             <th>🔴 10:30</th>
                             <th>🔴 17:15</th>
@@ -103,159 +96,17 @@
                     <tbody>
                         <% rows.forEach((row, index)=> { %>
                             <tr>
-                                <td>
-                                    <%= row.name %>
-                                </td>
-                                <td>
-                                    <%= count[row.name]?.['monday']?.inbound?.['07:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['monday']?.inbound?.['19:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['monday']?.outbound?.['05:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['monday']?.outbound?.['08:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['monday']?.inbound?.['10:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['monday']?.outbound?.['17:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['monday']?.outbound?.['20:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['tuesday']?.inbound?.['07:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['tuesday']?.inbound?.['19:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['tuesday']?.outbound?.['05:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['tuesday']?.outbound?.['08:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['tuesday']?.inbound?.['10:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['tuesday']?.outbound?.['17:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['tuesday']?.outbound?.['20:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['wednesday']?.inbound?.['07:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['wednesday']?.inbound?.['19:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['wednesday']?.outbound?.['05:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['wednesday']?.outbound?.['08:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['wednesday']?.inbound?.['10:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['wednesday']?.outbound?.['17:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['wednesday']?.outbound?.['20:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['thursday']?.inbound?.['07:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['thursday']?.inbound?.['19:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['thursday']?.outbound?.['05:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['thursday']?.outbound?.['08:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['thursday']?.inbound?.['10:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['thursday']?.outbound?.['17:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['thursday']?.outbound?.['20:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['friday']?.inbound?.['07:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['friday']?.inbound?.['19:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['friday']?.outbound?.['05:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['friday']?.outbound?.['08:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['friday']?.inbound?.['10:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['friday']?.outbound?.['17:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['friday']?.outbound?.['20:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['saturday']?.inbound?.['07:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['saturday']?.inbound?.['19:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['saturday']?.outbound?.['05:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['saturday']?.outbound?.['08:15'] ?? 0 %>
-                                  </td>
-                                   <td>
-                                    <%= count[row.name]?.['saturday']?.inbound?.['10:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['saturday']?.outbound?.['17:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['saturday']?.outbound?.['20:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['sunday']?.inbound?.['07:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['sunday']?.inbound?.['19:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['sunday']?.outbound?.['05:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['sunday']?.outbound?.['08:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['sunday']?.inbound?.['10:30'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['sunday']?.outbound?.['17:15'] ?? 0 %>
-                                  </td>
-                                  <td>
-                                    <%= count[row.name]?.['sunday']?.outbound?.['20:15'] ?? 0 %>
-                                  </td>
-                                  
+                                <td><%= row.name %></td>
+                                <% ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].forEach(function(day){ %>
+                                    <td><%= count[row.name]?.[day]?.inbound?.['07:30'] ?? 0 %></td>
+                                    <td><%= count[row.name]?.[day]?.inbound?.['19:30'] ?? 0 %></td>
+                                    <td><%= count[row.name]?.[day]?.outbound?.['08:15'] ?? 0 %></td>
+                                    <td><%= count[row.name]?.[day]?.inbound?.['10:30'] ?? 0 %></td>
+                                    <td><%= count[row.name]?.[day]?.outbound?.['17:15'] ?? 0 %></td>
+                                    <td><%= count[row.name]?.[day]?.outbound?.['20:15'] ?? 0 %></td>
+                                <% }) %>
                             </tr>
-                            <% }) %>
+                        <% }) %>
                     </tbody>
                 </table>
             </section>
