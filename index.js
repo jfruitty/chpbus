@@ -8,6 +8,7 @@ const fs = require('fs');
 const { Pool } = require('pg');
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const ExcelJS = require('exceljs');
+const cron = require('node-cron');
 require('dotenv').config();
 
 const app = express();
@@ -21,6 +22,35 @@ const pool = new Pool({
   idleTimeoutMillis: 40000,
   keepAlive: true,
 });
+
+// --- Idempotent startup migration -------------------------------------------
+// Additive only (CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS) so it's
+// safe to run on every boot and never touches existing rows. Adds:
+//   - chp.hrnextweek : Friday snapshot of chp.nextweek for HR (kept per week_of)
+//   - service_date   : real calendar date on the bus/seat pipeline tables
+async function chpEnsureSchema() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chp.hrnextweek (
+      userid text,
+      route text,
+      department_approval text,
+      monday_inbound text,    monday_outbound text,
+      tuesday_inbound text,   tuesday_outbound text,
+      wednesday_inbound text, wednesday_outbound text,
+      thursday_inbound text,  thursday_outbound text,
+      friday_inbound text,    friday_outbound text,
+      saturday_inbound text,  saturday_outbound text,
+      sunday_inbound text,    sunday_outbound text,
+      week_of date
+    );
+    ALTER TABLE chp.driver     ADD COLUMN IF NOT EXISTS service_date date;
+    ALTER TABLE chp.seatdriver ADD COLUMN IF NOT EXISTS service_date date;
+    ALTER TABLE chp.bustoday   ADD COLUMN IF NOT EXISTS service_date date;
+    ALTER TABLE chp.seattoday  ADD COLUMN IF NOT EXISTS service_date date;
+    ALTER TABLE chp.busfromhr  ADD COLUMN IF NOT EXISTS service_date date;
+    ALTER TABLE chp.seatfromhr ADD COLUMN IF NOT EXISTS service_date date;
+  `);
+}
 
 // --- LINE / LIFF config from env ---
 const accessToken = process.env.CHANNELACCESSTOKEN;
@@ -272,11 +302,11 @@ async function chpTransferDriverToBustoday() {
     await client.query(`
       INSERT INTO chp.bustoday (
         driver_user_id, per_id, first_name,
-        last_name, route, day, bound, time, bus_number
+        last_name, route, day, bound, time, bus_number, service_date
       )
       SELECT
         driver_user_id, per_id, first_name,
-        last_name, route, day, bound, time, bus_number
+        last_name, route, day, bound, time, bus_number, service_date
       FROM chp.driver
     `);
     await client.query('COMMIT');
@@ -298,12 +328,12 @@ async function chpTransferSeatdriverToSeattoday() {
       INSERT INTO chp.seattoday (
         userid, perid, first_name,
         last_name, route, location, day,
-        time, busnumber, seat, bound
+        time, busnumber, seat, bound, service_date
       )
       SELECT
         userid, perid, first_name,
         last_name, route, location, day,
-        time, busnumber, seat, bound
+        time, busnumber, seat, bound, service_date
       FROM chp.seatdriver
     `);
     await client.query('COMMIT');
@@ -324,11 +354,11 @@ async function chpTransferBustodayToBusfromhr() {
     await client.query(`
       INSERT INTO chp.busfromhr (
         driver_user_id, per_id, first_name,
-        last_name, route, day, bound, time, bus_number
+        last_name, route, day, bound, time, bus_number, service_date
       )
       SELECT
         driver_user_id, per_id, first_name,
-        last_name, route, day, bound, time, bus_number
+        last_name, route, day, bound, time, bus_number, service_date
       FROM chp.bustoday
     `);
     await client.query('COMMIT');
@@ -350,18 +380,54 @@ async function chpTransferSeattodayToSeatfromhr() {
       INSERT INTO chp.seatfromhr (
         userid, perid, first_name,
         last_name, route, location, day,
-        time, busnumber, seat, bound
+        time, busnumber, seat, bound, service_date
       )
       SELECT
         userid, perid, first_name,
         last_name, route, location, day,
-        time, busnumber, seat, bound
+        time, busnumber, seat, bound, service_date
       FROM chp.seattoday
     `);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('chpTransferSeattodayToSeatfromhr error:', err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// tranfernextweekforhr: snapshot chp.nextweek into chp.hrnextweek so HR keeps a
+// stable copy of next week's bookings even after the Friday rollover clears
+// chp.nextweek. Tagged with week_of (next Monday); only that week's snapshot is
+// replaced, so prior weeks accumulate and are never overwritten/lost. Atomic.
+async function chpSnapshotNextweekForHr() {
+  const weekOf = bangkokNextMondayISO();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM chp.hrnextweek WHERE week_of = $1', [weekOf]);
+    await client.query(`
+      INSERT INTO chp.hrnextweek (
+        userid, route, department_approval,
+        monday_inbound, monday_outbound, tuesday_inbound, tuesday_outbound,
+        wednesday_inbound, wednesday_outbound, thursday_inbound, thursday_outbound,
+        friday_inbound, friday_outbound, saturday_inbound, saturday_outbound,
+        sunday_inbound, sunday_outbound, week_of
+      )
+      SELECT
+        userid, route, department_approval,
+        monday_inbound, monday_outbound, tuesday_inbound, tuesday_outbound,
+        wednesday_inbound, wednesday_outbound, thursday_inbound, thursday_outbound,
+        friday_inbound, friday_outbound, saturday_inbound, saturday_outbound,
+        sunday_inbound, sunday_outbound, $1
+      FROM chp.nextweek
+    `, [weekOf]);
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('chpSnapshotNextweekForHr error:', err);
     throw err;
   } finally {
     client.release();
@@ -1693,8 +1759,7 @@ app.get('/supervisor', async (req, res) => {
 // HR sees ALL next-week bookings (for visibility before Friday rollover).
 app.get('/hrnextweek', async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT u.perid, u.first_name, u.last_name,
+    const cols = `u.perid, u.first_name, u.last_name,
               n.route, u.location,
               n.monday_inbound, n.monday_outbound,
               n.tuesday_inbound, n.tuesday_outbound,
@@ -1703,11 +1768,24 @@ app.get('/hrnextweek', async (req, res) => {
               n.friday_inbound, n.friday_outbound,
               n.saturday_inbound, n.saturday_outbound,
               n.sunday_inbound, n.sunday_outbound,
-              n.department_approval, u.supervisor
-       FROM chp.nextweek n
+              n.department_approval, u.supervisor`;
+    // Prefer the HR snapshot (chpSnapshotNextweekForHr keeps it stable across
+    // the Friday rollover); fall back to live chp.nextweek until one exists.
+    let result = await pool.query(
+      `SELECT ${cols}
+       FROM chp.hrnextweek n
        JOIN chp.users u ON u.userid = n.userid
+       WHERE n.week_of = (SELECT max(week_of) FROM chp.hrnextweek)
        ORDER BY u.first_name, u.last_name`
     );
+    if (result.rows.length === 0) {
+      result = await pool.query(
+        `SELECT ${cols}
+         FROM chp.nextweek n
+         JOIN chp.users u ON u.userid = n.userid
+         ORDER BY u.first_name, u.last_name`
+      );
+    }
     res.render('hrnextweek', {
       title: 'hrnextweek',
       data: { data: result.rows.map(chpBookingToRow) },
@@ -1797,6 +1875,11 @@ app.get('/drivercheck', async (req, res) => {
 
 async function chpAutoApprove() {
   await pool.query("UPDATE chp.thisweek SET department_approval = 'approved'");
+}
+
+// autoresetapprove: set every thisweek booking back to pending (un-approve all).
+async function chpResetApprove() {
+  await pool.query("UPDATE chp.thisweek SET department_approval = 'pending'");
 }
 
 async function chpClearDriverState() {
@@ -1966,6 +2049,7 @@ const DAY_COLUMNS = [
 async function chpPack(day, kind, group) {
   if (day < 1 || day > 7) return;
   const today = DAY_NAMES_TH[day];
+  const serviceDate = bangkokServiceDate(day); // actual calendar date for this day-number
 
   const caps = group === 'A' ? chpCapsGroupA : chpCapsGroupB;
   const routes = group === 'A' ? GROUP_A_ROUTES : GROUP_B_ROUTES;
@@ -2039,18 +2123,18 @@ async function chpPack(day, kind, group) {
         const busnumber = Math.ceil(pax / busSize);
 
         await client.query(
-          `INSERT INTO chp.seatdriver (userid, perid, first_name, last_name, route, location, day, bound, time, busnumber, seat)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          `INSERT INTO chp.seatdriver (userid, perid, first_name, last_name, route, location, day, bound, time, busnumber, seat, service_date)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
           [row.userid, row.perid, row.first_name, row.last_name,
-           route, row.location, today, bound, time, busnumber, seat]
+           route, row.location, today, bound, time, busnumber, seat, serviceDate]
         );
 
         matrix[rindex][ref] = pax;
 
         if (seat === 1) {
           await client.query(
-            `INSERT INTO chp.driver (route, day, bound, time, bus_number) VALUES ($1,$2,$3,$4,$5)`,
-            [route, today, bound, time, busnumber]
+            `INSERT INTO chp.driver (route, day, bound, time, bus_number, service_date) VALUES ($1,$2,$3,$4,$5,$6)`,
+            [route, today, bound, time, busnumber, serviceDate]
           );
         }
       }
@@ -2072,9 +2156,47 @@ async function chpPackRoute11to14Before1400(day) { return chpPack(day, 'before',
 async function chpPackRoute11to14After1400(day)  { return chpPack(day, 'after',  'B'); }
 
 // Convert UTC server time to Bangkok day-of-week (0=Sun..6=Sat).
+// Works regardless of server timezone (e.g. the SG host) because it offsets
+// the absolute UTC timestamp by +7h, not the local clock.
 function bangkokDayOfWeek(d = new Date()) {
   const bkk = new Date(d.getTime() + 7 * 60 * 60 * 1000);
   return bkk.getUTCDay();
+}
+
+// 'YYYY-MM-DD' for the Bangkok date `addDays` from today.
+function bangkokDateISO(addDays = 0, d = new Date()) {
+  const bkk = new Date(d.getTime() + 7 * 60 * 60 * 1000 + addDays * 24 * 60 * 60 * 1000);
+  const y = bkk.getUTCFullYear();
+  const m = String(bkk.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(bkk.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// Actual calendar date (Bangkok) for a pack day-number (1=Mon..7=Sun),
+// resolved as the next occurrence on/after today — matches how /daliy packs
+// today + the following days (incl. Fri packing Sat/Sun then next Mon).
+function bangkokServiceDate(dayNum) {
+  const dow = bangkokDayOfWeek();          // 0=Sun..6=Sat
+  const dowMon = dow === 0 ? 7 : dow;      // 1=Mon..7=Sun
+  const offset = (dayNum - dowMon + 7) % 7;
+  return bangkokDateISO(offset);
+}
+
+// Monday (Bangkok) of next week — the week chp.nextweek bookings are for.
+function bangkokNextMondayISO() {
+  const dow = bangkokDayOfWeek();
+  const dowMon = dow === 0 ? 7 : dow;
+  const daysUntilNextMonday = ((1 - dowMon + 7) % 7) || 7; // strictly the upcoming Monday
+  return bangkokDateISO(daysUntilNextMonday);
+}
+
+// Full Bangkok timestamp 'YYYY-MM-DD HH:MM:SS' (UTC+7), regardless of host TZ.
+function bangkokTimestamp(d = new Date()) {
+  const b = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+  const hh = String(b.getUTCHours()).padStart(2, '0');
+  const mm = String(b.getUTCMinutes()).padStart(2, '0');
+  const ss = String(b.getUTCSeconds()).padStart(2, '0');
+  return `${bangkokDateISO(0, d)} ${hh}:${mm}:${ss}`;
 }
 
 // GET /weekly — rollover thisweek→lastweek, nextweek→thisweek, clear nextweek.
@@ -2094,52 +2216,78 @@ app.get('/weekly', async (req, res) => {
   }
 });
 
-// GET /daliy — main daily scheduler. External cron triggers at 14:30 Asia/Bangkok
-// Monday–Friday. Mirrors calculatedaily() in the Apps Script: Mon–Thu pack
-// today-PM + tomorrow-AM; Friday packs Fri/Sat/Sun then rollover then Mon-AM.
-app.get('/daliy', async (req, res) => {
+// calculatedaily — main daily packing run (cron at 14:30 Asia/Bangkok Mon–Fri,
+// also exposed as GET /daliy for manual triggering). Mirrors calculatedaily()
+// in the Apps Script: Mon–Thu pack today-PM + tomorrow-AM; Friday packs
+// Fri/Sat/Sun then rollover then Mon-AM. Skips weekends.
+async function runDaily() {
   const dayOfWeek = bangkokDayOfWeek(); // 0=Sun..6=Sat
   if (dayOfWeek === 0 || dayOfWeek === 6) {
-    return res.json({ ok: true, skipped: 'weekend' });
+    return { ok: true, skipped: 'weekend' };
   }
 
-  try {
+  await chpAutoApprove();
+  await chpClearDriverState();
+
+  if (dayOfWeek === 5) {
+    // Friday: pack PM of Fri/Sat/Sun + AM of Sat/Sun, rollover, then AM of Mon.
+    await chpPackRoute1to10After1400(5);
+    await chpPackRoute11to14After1400(5);
+    await chpPackRoute1to10Before1400(6);
+    await chpPackRoute11to14Before1400(6);
+    await chpPackRoute1to10After1400(6);
+    await chpPackRoute11to14After1400(6);
+    await chpPackRoute1to10Before1400(7);
+    await chpPackRoute11to14Before1400(7);
+    await chpPackRoute1to10After1400(7);
+    await chpPackRoute11to14After1400(7);
+
+    await chpTransferThisweekToLastweek();
+    await chpTransferNextweekToThisweek();
     await chpAutoApprove();
-    await chpClearDriverState();
 
-    if (dayOfWeek === 5) {
-      // Friday: pack PM of Fri/Sat/Sun + AM of Sat/Sun, rollover, then AM of Mon.
-      await chpPackRoute1to10After1400(5);
-      await chpPackRoute11to14After1400(5);
-      await chpPackRoute1to10Before1400(6);
-      await chpPackRoute11to14Before1400(6);
-      await chpPackRoute1to10After1400(6);
-      await chpPackRoute11to14After1400(6);
-      await chpPackRoute1to10Before1400(7);
-      await chpPackRoute11to14Before1400(7);
-      await chpPackRoute1to10After1400(7);
-      await chpPackRoute11to14After1400(7);
+    await chpPackRoute1to10Before1400(1);
+    await chpPackRoute11to14Before1400(1);
+  } else {
+    // Mon–Thu: pack today's PM + tomorrow's AM
+    await chpPackRoute1to10After1400(dayOfWeek);
+    await chpPackRoute1to10Before1400(dayOfWeek + 1);
+    await chpPackRoute11to14After1400(dayOfWeek);
+    await chpPackRoute11to14Before1400(dayOfWeek + 1);
+  }
 
-      await chpTransferThisweekToLastweek();
-      await chpTransferNextweekToThisweek();
-      await chpAutoApprove();
+  await sendPushMessage(adminLineUsers, `CHP daliy pack เสร็จ (วัน ${dayOfWeek})`);
+  return { ok: true, day: dayOfWeek };
+}
 
-      await chpPackRoute1to10Before1400(1);
-      await chpPackRoute11to14Before1400(1);
-    } else {
-      // Mon–Thu: pack today's PM + tomorrow's AM
-      await chpPackRoute1to10After1400(dayOfWeek);
-      await chpPackRoute1to10Before1400(dayOfWeek + 1);
-      await chpPackRoute11to14After1400(dayOfWeek);
-      await chpPackRoute11to14Before1400(dayOfWeek + 1);
-    }
-
-    await sendPushMessage(adminLineUsers, `CHP daliy pack เสร็จ (วัน ${dayOfWeek})`);
-    res.json({ ok: true, day: dayOfWeek });
+app.get('/daliy', async (req, res) => {
+  try {
+    res.json(await runDaily());
   } catch (err) {
     console.error('GET /daliy error:', err);
     const u = (process.env.ERROR_NOTIFY_USER || '').trim();
     if (u) await sendPushMessage([u], `วันนี้ทำงานไม่สำเร็จครับ: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Manual triggers for the other two scheduled jobs (handy for testing).
+app.get('/autoresetapprove', async (req, res) => {
+  try {
+    await chpResetApprove();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('GET /autoresetapprove error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/tranfernextweekforhr', async (req, res) => {
+  try {
+    await chpSnapshotNextweekForHr();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('GET /tranfernextweekforhr error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -2322,8 +2470,51 @@ app.get('/download-excel-seatfromhr', (req, res) => chpDownloadExcel('chp.seatfr
 app.get('/download-csv-busfromhr',    (req, res) => chpDownloadCsv  ('chp.busfromhr',  'busfromhr.txt',   res));
 app.get('/download-csv-seatfromhr',   (req, res) => chpDownloadCsv  ('chp.seatfromhr', 'seatfromhr.txt',  res));
 
+// --- Schedulers (node-cron) -------------------------------------------------
+// The host runs in Singapore (UTC+8) but every job must fire at Bangkok
+// (UTC+7) wall-clock time, so each schedule passes { timezone: 'Asia/Bangkok' }
+// — node-cron interprets the expression in that zone, no manual offset.
+function chpRunJob(name, fn) {
+  Promise.resolve()
+    .then(fn)
+    .then(() => console.log(`[cron] ${name} done`))
+    .catch(async (err) => {
+      console.error(`[cron] ${name} failed:`, err);
+      const u = (process.env.ERROR_NOTIFY_USER || '').trim();
+      if (u) await sendPushMessage([u], `CHP cron ${name} ล้มเหลว: ${err.message}`).catch(() => {});
+    });
+}
+
+function chpStartSchedulers() {
+  const tz = { timezone: 'Asia/Bangkok' };
+  // autoresetapprove — ทุกวัน 00:00
+  cron.schedule('0 0 * * *',     () => chpRunJob('autoresetapprove', chpResetApprove), tz);
+  // tranfernextweekforhr — ศุกร์ 13:30 (ต้องก่อน rollover ของ calculatedaily 14:30)
+  cron.schedule('30 13 * * 5',   () => chpRunJob('tranfernextweekforhr', chpSnapshotNextweekForHr), tz);
+  // calculatedaily — จันทร์–ศุกร์ 14:30
+  cron.schedule('30 14 * * 1-5', () => chpRunJob('calculatedaily', runDaily), tz);
+
+  // TEMP DEBUG: ส่งเวลา BKK เข้า Telegram ทุก 1 นาที เพื่อยืนยัน timezone + ว่า cron
+  // ทำงานจริง บน Railway (host เป็น SG). ลบ schedule นี้ออกเมื่อยืนยันเรียบร้อยแล้ว.
+  cron.schedule('* * * * *', () => {
+    telegramNotify(`[cron test] เวลา BKK = ${bangkokTimestamp()}`).catch(() => {});
+  }, tz);
+
+  console.log('[cron] schedulers started (Asia/Bangkok)');
+}
+
 const PORT = Number(process.env.PORT) || 3000;
-app.listen(PORT, () => {
-  console.log(`CHP shuttle-bus server listening on :${PORT}`);
-  telegramNotify('CHP Bus deploy successful 🚀').catch(() => {});
-});
+
+(async () => {
+  try {
+    await chpEnsureSchema();
+    console.log('[startup] chp schema ensured');
+  } catch (err) {
+    console.error('[startup] chpEnsureSchema failed:', err);
+  }
+  chpStartSchedulers();
+  app.listen(PORT, () => {
+    console.log(`CHP shuttle-bus server listening on :${PORT}`);
+    telegramNotify('CHP Bus deploy successful 🚀').catch(() => {});
+  });
+})();
