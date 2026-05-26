@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Member</title>
-  <link href="/css/dashboard.css" rel="stylesheet" type="text/css">
+  <link href="/css/thisweekdashboard.css" rel="stylesheet" type="text/css">
   <link href="/css/member.css" rel="stylesheet" type="text/css">
 </head>
 
@@ -46,39 +46,23 @@
         </div>
       </header>
       <section class="filter-bar">
-        <input type="text" placeholder="เลขประจำตัว">
-        <input type="text" placeholder="ชื่อ">
-        <select class="select-department">
-          <option value="" disabled selected hidden>แผนก</option>
-          <option value="G1B HR-GA">G1B HR-GA</option>
-          <option value="G1B MT">G1B MT</option>
-          <option value="G1B PC">G1B PC</option>
-          <option value="G1B PD-BA">G1B PD-BA</option>
-          <option value="G1B PD-DP">G1B PD-DP</option>
-          <option value="G1B QAQC">G1B QAQC</option>
-          <option value="G1B Safty&Environment">G1B Safty&Environment</option>
-          <option value="G1B Sales">G1B Sales</option>
-          <option value="G1P Compacting">G1P Compacting</option>
-          <option value="G1P Finishing">G1P Finishing</option>
-          <option value="G1P HR-GA">G1P HR-GA</option>
-          <option value="G1P Inspecting & Packing">G1P Inspecting & Packing</option>
-          <option value="G1P Magna">G1P Magna</option>
-          <option value="G1P MT">G1P MT</option>
-          <option value="G1P OTS">G1P OTS</option>
-          <option value="G1P PC">G1P PC</option>
-          <option value="G1P PD">G1P PD</option>
-          <option value="G1P PD Center">G1P PD Center</option>
-          <option value="G1P PD-DP">G1P PD-DP</option>
-          <option value="G1P QA-QC">G1P QA-QC</option>
-          <option value="G1P QA-QC CHP">G1P QA-QC CHP</option>
-          <option value="G1P Rework">G1P Rework</option>
-          <option value="G1P Safty&Environment">G1P Safty&Environment</option>
-          <option value="G1P Sinter">G1P Sinter</option>
-          <option value="G1P Tooling">G1P Tooling</option>
-          <option value="Driver">Driver</option>
-          <option value="Old Driver">Old Driver</option>
-        </select>
-
+        <div class="filter-field">
+          <label>เลขประจำตัว</label>
+          <input type="text" placeholder="เลขประจำตัว">
+        </div>
+        <div class="filter-field">
+          <label>ชื่อ / นามสกุล</label>
+          <input type="text" placeholder="ชื่อ">
+        </div>
+        <div class="filter-field">
+          <label>แผนก</label>
+          <select class="select-department">
+            <option value="">ทุกแผนก</option>
+            <% (departments || []).forEach(function (d) { %>
+              <option value="<%= d %>"><%= d %></option>
+            <% }) %>
+          </select>
+        </div>
         <button class="apply-btn">ค้นหา</button>
       </section>
       <section class="table-section">
@@ -116,11 +100,12 @@
                 </td>
                 <td>
                   <select class="user-department">
-                    <% const deptOptions = ['G1B HR-GA','G1B MT','G1B PC','G1B PD-BA','G1B PD-DP','G1B QAQC','G1B Safty&Environment','G1B Sales','G1P Compacting','G1P Finishing','G1P HR-GA','G1P Inspecting & Packing','G1P Magna','G1P MT','G1P OTS','G1P PC','G1P PD','G1P PD Center','G1P PD-DP','G1P QA-QC','G1P QA-QC CHP','G1P Rework','G1P Safty&Environment','G1P Sinter','G1P Tooling','Driver','Old Driver']; %>
-                    <% if (!deptOptions.includes(row.department)) { %>
-                      <option value="<%= row.department || '' %>" selected hidden><%= row.department || '-' %></option>
+                    <% if (!row.department) { %>
+                      <option value="" selected hidden>- ไม่ระบุ -</option>
+                    <% } else if (!(departments || []).includes(row.department)) { %>
+                      <option value="<%= row.department %>" selected hidden><%= row.department %></option>
                     <% } %>
-                    <% deptOptions.forEach(function(d){ %>
+                    <% (departments || []).forEach(function(d){ %>
                       <option value="<%= d %>" <%= row.department===d ? 'selected' : '' %>><%= d %></option>
                     <% }) %>
                   </select>

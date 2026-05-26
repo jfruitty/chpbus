@@ -422,7 +422,8 @@ app.get('/member', requireRole('admin'), async (req, res) => {
         CASE WHEN approvalstatus = 'pending' THEN 0 ELSE 1 END,
         location
     `);
-    res.render('member', { rows: result.rows });
+    const departments = await getChpDepartments();
+    res.render('member', { rows: result.rows, departments });
   } catch (err) {
     console.error('GET /member error:', err);
     res.status(500).send('Server Error');
