@@ -1,155 +1,276 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="th">
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>
-    <%= title %>
-  </title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title><%= title %></title>
+  <style>
+    :root {
+      --blue: #4a8cf7;
+      --blue-dark: #2f6fce;
+      --ok: #16c75f;
+      --ok-bg: #e9fff2;
+      --wait: #ff7608;
+      --wait-bg: #fff3e6;
+      --slate-50: #f8fafc;
+      --slate-100: #f1f5f9;
+      --slate-200: #e2e8f0;
+      --slate-400: #94a3b8;
+      --slate-500: #64748b;
+      --slate-700: #334155;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Sarabun", Arial, sans-serif;
+      background: var(--slate-100);
+      color: var(--slate-700);
+      padding-bottom: 88px; /* room for sticky footer */
+    }
+    .topbar {
+      background: var(--blue);
+      color: #fff;
+      padding: 16px 18px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: 0 2px 8px rgba(29, 92, 255, 0.25);
+    }
+    .topbar h1 { margin: 0; font-size: 18px; font-weight: 700; }
+    .topbar .sub { margin: 4px 0 0; font-size: 13px; opacity: 0.9; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px;
+      gap: 12px;
+    }
+    .toolbar .selectall {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--slate-500);
+      cursor: pointer;
+    }
+    .toolbar .count { font-size: 13px; color: var(--slate-400); font-weight: 600; }
+
+    .list { padding: 0 14px; display: flex; flex-direction: column; gap: 12px; }
+
+    .empty {
+      text-align: center;
+      color: var(--slate-400);
+      padding: 48px 16px;
+      font-size: 15px;
+    }
+
+    .card {
+      display: block;
+      background: #fff;
+      border: 1px solid var(--slate-200);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+      cursor: pointer;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .card:has(.data-checkbox:checked) {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 2px rgba(74, 140, 247, 0.25);
+    }
+
+    .card-head { display: flex; align-items: center; gap: 12px; }
+    .data-checkbox {
+      width: 22px; height: 22px;
+      accent-color: var(--blue);
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .who { flex: 1; min-width: 0; }
+    .who .nm { font-size: 16px; font-weight: 700; color: var(--slate-700); }
+    .who .pid { font-size: 12px; color: var(--slate-400); margin-top: 2px; }
+    .who .loc { font-size: 12px; color: var(--slate-500); margin-top: 2px; }
+    .who .loc.none { color: var(--wait); font-weight: 600; }
+
+    .status {
+      flex-shrink: 0;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 5px 10px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .status.ok   { color: var(--ok);   background: var(--ok-bg); }
+    .status.wait { color: var(--wait); background: var(--wait-bg); }
+
+    .sched {
+      margin-top: 12px;
+      border-top: 1px dashed var(--slate-200);
+      padding-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .day-row {
+      display: grid;
+      grid-template-columns: 64px 1fr 1fr;
+      align-items: center;
+      font-size: 13px;
+    }
+    .day-row .dn { font-weight: 700; color: var(--slate-500); }
+    .day-row .io { display: flex; align-items: center; gap: 5px; }
+    .day-row .io .lbl { font-size: 11px; color: var(--slate-400); }
+    .day-row .io .v { font-weight: 600; color: var(--slate-700); }
+    .sched .none { font-size: 13px; color: var(--slate-400); }
+
+    .footerbar {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: #fff;
+      border-top: 1px solid var(--slate-200);
+      padding: 12px 16px;
+      box-shadow: 0 -2px 10px rgba(15, 23, 42, 0.06);
+    }
+    .approve-btn {
+      width: 100%;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      background: var(--blue);
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .approve-btn:hover { background: var(--blue-dark); }
+    .approve-btn:disabled { background: var(--slate-200); color: var(--slate-400); cursor: default; }
+  </style>
 </head>
 
 <body>
-  <h1>
-    <%= title %>
-  </h1>
-  <table>
-    <thead>
-      <tr>
-        <th>รหัสพนักงาน</th>
-        <th>ชื่อ</th>
-        <th>นามสกุล</th>
-        <th>จันทร์</th>
-        <th>จันทร์</th>
-        <th>อังคาร</th>
-        <th>อังคาร</th>
-        <th>พุธ</th>
-        <th>พุธ</th>
-        <th>พฤหัส</th>
-        <th>พฤหัส</th>
-        <th>ศุกร์</th>
-        <th>ศุกร์</th>
-        <th>เสาร์</th>
-        <th>เสาร์</th>
-        <th>อาทิตย์</th>
-        <th>อาทิตย์</th>
-        <th></th>
-        <th>
-          <input type="checkbox" id="select-all" />
-        </th>
-      </tr>
-    </thead>
-    <tbody>
-      <% data.data.forEach(function(row) { %>
-        <tr>
-          <% for (let i=0; i < 19; i++) { %>
-            <% if (i==3 || i==4 ) {continue;} %>
-              <td>
-                <% if (row[i] == '') { %>
-                  ไม่ใช้
-                <% } else { %>
-                  <%= row[i] %>
-                <% } %>
-              </td>
-              <% } %>
-                <% if (row[19]==false){ %>
-                  <td>รออนุมัติ</td>
-                  <% }else{%>
-                    <td>อนุมัติแล้ว</td>
-                    <%}%>
-                      <td>
-                        <input type="checkbox" class="data-checkbox" name="approve" id="<%= row[0] %>"
-                          value="<%= row[0] %>" />
-                      </td>
-        </tr>
-        <% }) %>
-          <tr>
-            <th colspan="20">
-              <button id="submit-button">Submit</button>
-            </th>
-          </tr>
-    </tbody>
-  </table>
+  <header class="topbar">
+    <h1>อนุมัติการจองรถ (สัปดาห์นี้)</h1>
+    <% if (name) { %><p class="sub">หัวหน้างาน: <%= name %></p><% } %>
+  </header>
+
+  <section class="toolbar">
+    <label class="selectall"><input type="checkbox" id="select-all"> เลือกทั้งหมด</label>
+    <span class="count"><%= data.data.length %> รายชื่อ</span>
+  </section>
+
+  <main class="list">
+    <% if (data.data.length === 0) { %>
+      <div class="empty">ไม่มีรายชื่อในทีมของคุณ</div>
+    <% } %>
+
+    <% data.data.forEach(function (row) {
+         const approved = row[19] === true;
+         const location = row[4];
+         const days = [
+           ['จันทร์',  row[5],  row[6]],
+           ['อังคาร',  row[7],  row[8]],
+           ['พุธ',     row[9],  row[10]],
+           ['พฤหัส',   row[11], row[12]],
+           ['ศุกร์',   row[13], row[14]],
+           ['เสาร์',   row[15], row[16]],
+           ['อาทิตย์', row[17], row[18]],
+         ];
+         const used = function (v) { return v && v !== 'ไม่ใช้'; };
+         const bookedDays = days.filter(function (d) { return used(d[1]) || used(d[2]); });
+    %>
+      <label class="card">
+        <div class="card-head">
+          <input type="checkbox" class="data-checkbox" value="<%= row[0] %>" <%= approved ? 'checked' : '' %>>
+          <div class="who">
+            <div class="nm"><%= row[1] %> <%= row[2] %></div>
+            <div class="pid">รหัส <%= row[0] %></div>
+            <% if (location) { %>
+              <div class="loc">📍 <%= location %></div>
+            <% } else { %>
+              <div class="loc none">⚠ ยังไม่มีจุดขึ้นรถ</div>
+            <% } %>
+          </div>
+          <span class="status <%= approved ? 'ok' : 'wait' %>"><%= approved ? '✓ อนุมัติแล้ว' : '⏳ รออนุมัติ' %></span>
+        </div>
+
+        <div class="sched">
+          <% if (bookedDays.length === 0) { %>
+            <div class="none">ไม่ได้จองวันใดในสัปดาห์นี้</div>
+          <% } else { %>
+            <% bookedDays.forEach(function (d) { %>
+              <div class="day-row">
+                <span class="dn"><%= d[0] %></span>
+                <span class="io"><span class="lbl">เข้า</span><span class="v"><%= used(d[1]) ? d[1] : '–' %></span></span>
+                <span class="io"><span class="lbl">ออก</span><span class="v"><%= used(d[2]) ? d[2] : '–' %></span></span>
+              </div>
+            <% }) %>
+          <% } %>
+        </div>
+      </label>
+    <% }) %>
+  </main>
+
+  <footer class="footerbar">
+    <button id="submit-button" class="approve-btn" disabled>อนุมัติที่เลือก (<span id="selcount">0</span>)</button>
+  </footer>
 
   <script>
-
-    const data = '<% JSON.stringify(data) %>';
-    const name = "<%name%>";
-
     const selectAllCheckbox = document.getElementById('select-all');
-    const dataCheckboxes = document.querySelectorAll('.data-checkbox');
-
-    selectAllCheckbox.addEventListener('change', function () {
-      dataCheckboxes.forEach(checkbox => {
-        checkbox.checked = this.checked;
-      });
-    });
-
-    dataCheckboxes.forEach(checkbox => {
-      checkbox.addEventListener('change', function () {
-
-        if (!this.checked) {
-          selectAllCheckbox.checked = false;
-        }
-      });
-    });
-
     const submitButton = document.getElementById('submit-button');
+    const selCountEl = document.getElementById('selcount');
 
-    submitButton.addEventListener('click', async () => {
-      console.log('Clicked submit button');
-      try {
-        await submitData();
-        console.log('Data submitted successfully');
-      } catch (error) {
-        console.error('Error submitting data:', error);
-      }
-    });
-
-    async function submitData() {
-      console.log('Entering submitData function');
-      const selectedRows = [];
-      const dataCheckboxes = document.querySelectorAll('.data-checkbox:checked');
-      dataCheckboxes.forEach(checkbox => {
-        selectedRows.push(checkbox.value);
-      });
-
-      if (selectedRows.length === 0) {
-        console.log('No rows selected');
-        alert('Please select at least one row to submit.');
-        return;
-      }
-
-    
-
-      try {
-        console.log('Sending fetch request');
-        const response = await fetch('/approve', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ ids: selectedRows }),
-        });
-
-        console.log('Fetch request completed');
-        if (response.ok) {
-          console.log('Data submitted successfully');
-          // You can add additional logic here, such as reloading the page or showing a success message
-          location.reload()
-        } else {
-          const errorData = await response.json();
-          console.error('Error submitting data:', errorData);
-          throw new Error(`HTTP error ${response.status}: ${errorData.message}`);
-        }
-      } catch (error) {
-        console.error('Error submitting data:', error);
-        throw error;
-      }
+    function refreshState() {
+      const all = document.querySelectorAll('.data-checkbox');
+      const checked = document.querySelectorAll('.data-checkbox:checked');
+      selCountEl.textContent = checked.length;
+      submitButton.disabled = checked.length === 0;
+      selectAllCheckbox.checked = all.length > 0 && checked.length === all.length;
     }
 
-  </script>
+    selectAllCheckbox.addEventListener('change', function () {
+      document.querySelectorAll('.data-checkbox').forEach(cb => { cb.checked = this.checked; });
+      refreshState();
+    });
 
+    document.querySelectorAll('.data-checkbox').forEach(cb => {
+      cb.addEventListener('change', refreshState);
+    });
+
+    refreshState();
+
+    submitButton.addEventListener('click', async () => {
+      const ids = Array.from(document.querySelectorAll('.data-checkbox:checked')).map(cb => cb.value);
+      if (ids.length === 0) { alert('กรุณาเลือกอย่างน้อย 1 รายชื่อ'); return; }
+
+      submitButton.disabled = true;
+      const original = submitButton.innerHTML;
+      submitButton.textContent = 'กำลังบันทึก...';
+      try {
+        const response = await fetch('/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        });
+        if (response.ok) {
+          location.reload();
+        } else {
+          const err = await response.json().catch(() => ({}));
+          alert('บันทึกไม่สำเร็จ: ' + (err.error || response.status));
+          submitButton.innerHTML = original;
+          refreshState();
+        }
+      } catch (error) {
+        console.error('Error submitting data:', error);
+        alert('เกิดข้อผิดพลาด กรุณาลองใหม่');
+        submitButton.innerHTML = original;
+        refreshState();
+      }
+    });
+  </script>
 </body>
 
 </html>
