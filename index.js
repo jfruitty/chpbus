@@ -611,10 +611,23 @@ app.get('/passengerusersjson', requireRole('admin', 'driver'), async (req, res) 
 // ===========================================================================
 
 // --- Booking dashboards (admin) ---
+
+// Distinct, non-empty department names from chp.users, sorted.
+// Drives the department filter dropdown on the booking dashboards
+// (replaces the old hardcoded list).
+async function getChpDepartments() {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT department FROM chp.users
+     WHERE department IS NOT NULL AND btrim(department) <> ''
+     ORDER BY department`
+  );
+  return rows.map((r) => r.department);
+}
+
 app.get('/thisweekdashboard', requireRole('admin'), async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT u.userid, u.perid, u.first_name, u.last_name, u.location, t.route,
+      SELECT u.userid, u.perid, u.first_name, u.last_name, u.location, u.department, t.route,
              t.monday_inbound, t.monday_outbound,
              t.tuesday_inbound, t.tuesday_outbound,
              t.wednesday_inbound, t.wednesday_outbound,
@@ -627,7 +640,8 @@ app.get('/thisweekdashboard', requireRole('admin'), async (req, res) => {
       LEFT JOIN chp.users u ON u.userid = t.userid
       ORDER BY t.route
     `);
-    res.render('thisweekdashboard', { rows: result.rows });
+    const departments = await getChpDepartments();
+    res.render('thisweekdashboard', { rows: result.rows, departments });
   } catch (err) {
     console.error('GET /thisweekdashboard error:', err);
     res.status(500).send('Server Error');
@@ -637,7 +651,7 @@ app.get('/thisweekdashboard', requireRole('admin'), async (req, res) => {
 app.get('/nextweekdashboard', requireRole('admin'), async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT u.userid, u.perid, u.first_name, u.last_name, u.location, t.route,
+      SELECT u.userid, u.perid, u.first_name, u.last_name, u.location, u.department, t.route,
              t.monday_inbound, t.monday_outbound,
              t.tuesday_inbound, t.tuesday_outbound,
              t.wednesday_inbound, t.wednesday_outbound,
@@ -649,7 +663,8 @@ app.get('/nextweekdashboard', requireRole('admin'), async (req, res) => {
       LEFT JOIN chp.users u ON u.userid = t.userid
       ORDER BY t.route
     `);
-    res.render('nextweekdashboard', { rows: result.rows });
+    const departments = await getChpDepartments();
+    res.render('nextweekdashboard', { rows: result.rows, departments });
   } catch (err) {
     console.error('GET /nextweekdashboard error:', err);
     res.status(500).send('Server Error');

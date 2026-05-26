@@ -44,9 +44,23 @@
                 </div>
             </header>
             <section class="filter-bar">
-                <input type="text" placeholder="เลขประจำตัว">
-                <input type="text" placeholder="ชื่อ">
-
+                <div class="filter-field">
+                    <label>เลขประจำตัว</label>
+                    <input type="text" placeholder="เลขประจำตัว">
+                </div>
+                <div class="filter-field">
+                    <label>ชื่อ / นามสกุล</label>
+                    <input type="text" placeholder="ชื่อ">
+                </div>
+                <div class="filter-field">
+                    <label>แผนก</label>
+                    <select class="dept-filter">
+                        <option value="">ทุกแผนก</option>
+                        <% (departments || []).forEach(function (d) { %>
+                            <option value="<%= d %>"><%= d %></option>
+                        <% }) %>
+                    </select>
+                </div>
                 <button class="apply-btn">ค้นหา</button>
             </section>
             <section class="table-section">
@@ -58,6 +72,7 @@
                             <th>ชื่อ</th>
                             <th>นามสกุล</th>
                             <th>จุดขึ้นรถ</th>
+                            <th>แผนก</th>
                             <th>🟡 เข้า</th>
                             <th>🟡 ออก</th>
                             <th>🌸 เข้า</th>
@@ -72,13 +87,13 @@
                             <th>🟣 ออก</th>
                             <th>🔴 เข้า</th>
                             <th>🔴 ออก</th>
-                            <th>หัวหน้างาน</th>
+                            <th>อนุมัติแผนก</th>
 
                         </tr>
                     </thead>
                     <tbody>
                         <% rows.forEach((row, index)=> { %>
-                            <tr data-userid="<%= row.userid %>">
+                            <tr data-userid="<%= row.userid %>" data-department="<%= row.department || '' %>">
                                 <td>
                                     <%= index + 1 %>
                                 </td>
@@ -93,6 +108,9 @@
                                 </td>
                                 <td>
                                     <%= row.location %>
+                                </td>
+                                <td class="dept-cell">
+                                    <%= row.department %>
                                 </td>
                                 <td>
                                     <% if (row.monday_inbound==='ไม่ใช้' ) { %>

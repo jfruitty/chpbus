@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const perInput = document.querySelector('.filter-bar input[placeholder="เลขประจำตัว"]');
   const nameInput = document.querySelector('.filter-bar input[placeholder="ชื่อ"]');
+  const deptSelect = document.querySelector('.filter-bar select.dept-filter');
   const tableBody = document.querySelector('.approval-table tbody');
   const prevPageButton = document.querySelector('.pagination .prev-page');
   const nextPageButton = document.querySelector('.pagination .next-page');
@@ -44,41 +45,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Filter and Search
+  // Filter and Search — matches employee id, name (first + last) and department.
   const filterRows = () => {
-    const perTerm = perInput.value.toLowerCase();
-    const nameTerm = nameInput.value.toLowerCase();
+    const perTerm = perInput.value.trim().toLowerCase();
+    const nameTerm = nameInput.value.trim().toLowerCase();
+    const deptTerm = deptSelect ? deptSelect.value : '';
 
-    totalRows = 0;
-    let newrow = []
-    const allrows = tableBody.querySelectorAll('tr');
+    const allRows = tableBody.querySelectorAll('tr');
+    const matched = [];
 
-    allrows.forEach(row => {
+    allRows.forEach((row) => {
       const cells = row.querySelectorAll('td');
-      const perInput = cells[1].textContent.toLowerCase();
-      const nameInput = cells[3].textContent.toLowerCase();
+      const perValue = cells[1] ? cells[1].textContent.toLowerCase() : '';
+      const nameValue = ((cells[2] ? cells[2].textContent : '') + ' ' +
+                         (cells[3] ? cells[3].textContent : '')).toLowerCase();
+      const deptValue = row.dataset.department || '';
 
-      allrows.forEach((row) => {
+      const matchesPerNumber = perTerm === '' || perValue.includes(perTerm);
+      const matchesName = nameTerm === '' || nameValue.includes(nameTerm);
+      const matchesDept = deptTerm === '' || deptValue === deptTerm;
+
+      if (matchesPerNumber && matchesName && matchesDept) {
+        matched.push(row);
+      } else {
         row.style.display = 'none';
-      });
-
-      const matchesPerNumber = perTerm === '' || perInput.includes(perTerm)
-      const matchesName = nameTerm === '' || nameInput.includes(nameTerm)
-      if (matchesName && matchesPerNumber ) {
-
-        newrow.push(row)
-        totalRows++;
       }
     });
 
-    totalPages = Math.ceil(totalRows / rowsPerPage);
+    totalRows = matched.length;
+    totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage));
     currentPage = 1;
-    rows = newrow
+    rows = matched;
     renderRows();
   };
 
   nameInput.addEventListener('input', filterRows);
   perInput.addEventListener('input', filterRows);
+  if (deptSelect) deptSelect.addEventListener('change', filterRows);
 
   tableBody.addEventListener('change', async (event) => {
     if (event.target.classList.contains('approval-department-thisweek')) {
