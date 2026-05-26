@@ -1,13 +1,26 @@
-/* styles.css */
+/*
+ * driver.css — shared base for the bus/seat admin dashboards:
+ *   /driver /bustoday /seatdriver /busfromhr /seatfromhr
+ *   /bushistory /seathistory /seattoday
+ *
+ * Layout/visuals match thisweekdashboard.css (member / thisweek / nextweek)
+ * so every admin page shares one look. Driver-specific bits (action
+ * buttons, modal dialogs, insert/edit forms) live at the bottom of this
+ * file; the modal pages also layer modal-form.css on top.
+ */
 
 :root {
   --light-blue: #4a8cf7;
   --blue-200: #bfdbfe;
   --blue-500: #004db3;
+  --slate-50: #f8fafc;
   --slate-100: #f1f5f9;
   --slate-200: #e2e8f0;
-  --slate-300: #CBD5E1;
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;
   --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-700: #334155;
   --curlcurl7: 7px;
   --success: #16c75f;
   --success-light: #e9fff2;
@@ -15,95 +28,139 @@
   --cancel: #ff4d4f;
   --waiting: #ff7608;
   --waiting-light: #ffe6d3;
-  --slate-600: #475569;
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 4px 16px rgba(15, 23, 42, 0.08);
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
-  font-family: Arial, sans-serif;
+  font-family: "Segoe UI", "Sarabun", Arial, sans-serif;
   margin: 0;
   padding: 0;
-  background-color: #f5f5f5;
+  background-color: var(--slate-100);
+  color: var(--slate-700);
 }
 
 .container {
   display: flex;
   height: 100vh;
+  overflow: hidden;
 }
 
+/* ---------- Sidebar ---------- */
 .sidebar {
-  width: 250px;
-  background-color: #f8fbff;
-  color: white;
+  width: 240px;
+  flex-shrink: 0;
+  background-color: #ffffff;
+  border-right: 1px solid var(--slate-200);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding-inline: 22px;
+  padding: 20px 18px;
 }
 
-.logo{
-  min-height: 50%;
+.logo {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  font-weight: 800;
+  font-size: 18px;
+  color: var(--light-blue);
+  letter-spacing: 0.3px;
+  margin-bottom: 16px;
+}
+
+.logo::before {
+  content: "🚌";
+  margin-right: 8px;
+  font-size: 22px;
 }
 
 .logo img {
   width: 100%;
   height: auto;
- 
 }
 
 .menu {
   list-style: none;
   padding: 0;
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .menu li {
-  padding: 15px 20px;
+  padding: 11px 16px;
   border-radius: 10px;
+  transition: background-color 0.2s ease;
 }
 
 .menu li a {
   color: var(--slate-500);
   text-decoration: none;
   font-weight: 600;
+  font-size: 14px;
+  display: block;
+}
+
+.menu li:hover {
+  background-color: var(--slate-100);
 }
 
 .menu li.active {
   background-color: var(--light-blue);
-  box-shadow: 0px 4px 10px 0px #1d5cff80;
+  box-shadow: 0 4px 12px rgba(29, 92, 255, 0.35);
+}
+
+.menu li.active:hover {
+  background-color: var(--light-blue);
 }
 
 li.active a {
-  color: white;
+  color: #ffffff;
 }
 
 .footer {
-  padding: 20px;
+  padding: 16px 6px 6px;
   text-align: center;
-  color: var(--slate-500);
+  color: var(--slate-400);
+  border-top: 1px solid var(--slate-200);
 }
 
 .company-info p {
-  margin: 5px 0;
+  margin: 3px 0;
+  font-size: 13px;
+  font-weight: 600;
 }
 
+/* ---------- Main content ---------- */
 .main-content {
-  /* flex-grow: 1; */
-  width: 1250px;
-  padding: 20px;
-  background-color: white;
-  overflow-y: auto;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 26px;
+  background-color: var(--slate-100);
+  overflow: hidden;
 }
 
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 
 .user-info {
   display: flex;
   align-items: center;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--slate-700);
 }
 
 .user-info img {
@@ -113,125 +170,210 @@ li.active a {
   margin-right: 10px;
 }
 
+/* bustoday cost summary badge */
+.cost span {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  background: var(--blue-200);
+  color: var(--blue-500);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .actions .action-btn {
   margin-left: 10px;
   padding: 10px 15px;
   background-color: var(--light-blue);
   color: white;
   border: none;
+  border-radius: 8px;
   cursor: pointer;
 }
 
+/* ---------- Filter bar ---------- */
 .filter-bar {
   display: flex;
-  align-items: center;
-  margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  background-color: #ffffff;
+  border: 1px solid var(--slate-200);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-field label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--slate-500);
+  letter-spacing: 0.2px;
 }
 
 .filter-bar input[type='text'],
 .filter-bar input[type='date'],
 .filter-bar select {
-  margin-right: 10px;
-  padding: 10px;
-  border-radius: var(--curlcurl7);
+  padding: 9px 12px;
+  border-radius: 8px;
   border: 1px solid var(--slate-200);
+  background-color: var(--slate-50);
+  font-size: 14px;
+  color: var(--slate-700);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.filter-bar input[type='text']:focus,
+.filter-bar input[type='date']:focus,
+.filter-bar select:focus {
+  outline: none;
+  border-color: var(--light-blue);
+  box-shadow: 0 0 0 3px rgba(74, 140, 247, 0.15);
+  background-color: #ffffff;
 }
 
 .filter-bar input[type='text']::placeholder {
-  color: var(--slate-300)
+  color: var(--slate-400);
 }
-
 
 .filter-bar .filter-btn,
 .filter-bar .apply-btn {
-  padding: 10px 15px;
+  padding: 9px 20px;
   background-color: var(--light-blue);
-  border-radius: 10px;
+  border-radius: 8px;
   color: white;
   border: none;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
-  box-shadow: 0px 4px 10px 0px #1d5cff80;
+  box-shadow: 0 4px 12px rgba(29, 92, 255, 0.3);
+  transition: background-color 0.2s ease;
 }
 
+.filter-bar .filter-btn:hover,
+.filter-bar .apply-btn:hover {
+  background-color: #2f6fce;
+}
+
+/* ---------- Table ---------- */
 .table-section {
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  flex: 1;
+  overflow: auto;
+  background-color: #ffffff;
+  border: 1px solid var(--slate-200);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
   color: var(--slate-600);
 }
 
 .approval-table {
-  width: 100%;
   border-collapse: collapse;
-  margin-bottom: 20px;
+  width: max-content;
+  min-width: 100%;
 }
 
 .approval-table th,
 .approval-table td {
-  height: 40px;
-  padding: 5px;
+  height: 44px;
+  padding: 8px 12px;
   text-align: left;
+  font-size: 14px;
+  border-bottom: 1px solid var(--slate-100);
 }
 
-.approval-table th {
+.approval-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   background-color: var(--slate-100);
   border-bottom: 1px solid var(--slate-200);
-  color: var(--slate-500);
+  color: var(--slate-600);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
-.approval-table tr:hover {
-  background-color: #f1f1f1;
+.approval-table tbody tr:nth-child(even) {
+  background-color: var(--slate-50);
+}
+
+.approval-table tbody tr:hover {
+  background-color: #eef4ff;
 }
 
 .approval-table select {
-  padding: 5px;
-  border-radius: 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--slate-200);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.footer-table{
+/* ---------- Footer / pagination ---------- */
+.footer-table {
   display: flex;
   flex-direction: row;
   justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px 4px;
 }
 
 .pagination {
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 10px;
   gap: 10px;
+  color: var(--slate-500);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .pagination button {
   display: flex;
   justify-content: center;
   align-items: center;
-  width: 20px;
-  height: 20px;
+  width: 30px;
+  height: 30px;
   background-color: var(--blue-200);
   color: var(--blue-500);
   font-size: 1rem;
-  font-weight: bolder;
+  font-weight: 800;
   border: none;
-  border-radius: 5px;
+  border-radius: 8px;
   cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.pagination button:hover {
+  background-color: #a9ceff;
 }
 
 .pagination button:disabled {
-  background-color: #bdc3c7;
+  background-color: var(--slate-200);
+  color: var(--slate-400);
+  cursor: default;
 }
 
-.results{
+.results {
   display: flex;
-    justify-content: center;
-    align-items: center;
-    margin-bottom: 20px;
-    margin-right: 20px;
-    padding-bottom: 10px;
-    gap: 10px;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  color: var(--slate-500);
+  font-size: 14px;
+  font-weight: 600;
 }
 
+/* ---------- Approval status colours ---------- */
 .approval-status {
   border: none;
 }
@@ -251,44 +393,52 @@ li.active a {
   background-color: var(--cancel-light);
 }
 
+/* ===========================================================================
+   Driver-specific: action buttons, modal dialogs, insert/edit forms.
+   (modal pages also load modal-form.css, which refines .modal-pretty /
+   .form-modal on top of these.)
+   =========================================================================== */
+
 .add-btn {
   margin-right: 1rem;
   padding: 10px 15px;
   background-color: var(--light-blue);
-  border-radius: 10px;
+  border-radius: 8px;
   color: white;
   border: none;
   cursor: pointer;
-  box-shadow: 0px 4px 10px 0px #1d5cff80;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(29, 92, 255, 0.3);
 }
 
 #downloadCsvButton {
   padding: 10px 15px;
   background-color: var(--success);
-  border-radius: 10px;
+  border-radius: 8px;
   color: white;
   border: none;
   cursor: pointer;
-  box-shadow: 0px 4px 10px 0px #1dff3b80;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(22, 199, 95, 0.3);
 }
 
-.send-btn{
+.send-btn {
   margin-left: 1rem;
   padding: 10px 15px;
   background-color: var(--cancel);
-  border-radius: 10px;
+  border-radius: 8px;
   color: white;
   border: none;
   cursor: pointer;
-  box-shadow: 0px 4px 10px 0px #ff371d80;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(255, 55, 29, 0.3);
 }
-
 
 /* Modal styles */
 .modal {
   display: none; /* Hidden by default */
   position: fixed; /* Stay in place */
-  z-index: 1; /* Sit on top */
+  z-index: 1000; /* Sit on top — above the sticky table header (z-index:2) */
   left: 0;
   top: 0;
   width: 100%; /* Full width */
