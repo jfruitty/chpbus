@@ -2190,15 +2190,6 @@ function bangkokNextMondayISO() {
   return bangkokDateISO(daysUntilNextMonday);
 }
 
-// Full Bangkok timestamp 'YYYY-MM-DD HH:MM:SS' (UTC+7), regardless of host TZ.
-function bangkokTimestamp(d = new Date()) {
-  const b = new Date(d.getTime() + 7 * 60 * 60 * 1000);
-  const hh = String(b.getUTCHours()).padStart(2, '0');
-  const mm = String(b.getUTCMinutes()).padStart(2, '0');
-  const ss = String(b.getUTCSeconds()).padStart(2, '0');
-  return `${bangkokDateISO(0, d)} ${hh}:${mm}:${ss}`;
-}
-
 // GET /weekly — rollover thisweek→lastweek, nextweek→thisweek, clear nextweek.
 // Apps Script invokes this inline from calculatedaily on Friday; expose it
 // separately for manual triggering or a dedicated Friday cron.
@@ -2493,12 +2484,6 @@ function chpStartSchedulers() {
   cron.schedule('30 13 * * 5',   () => chpRunJob('tranfernextweekforhr', chpSnapshotNextweekForHr), tz);
   // calculatedaily — จันทร์–ศุกร์ 14:30
   cron.schedule('30 14 * * 1-5', () => chpRunJob('calculatedaily', runDaily), tz);
-
-  // TEMP DEBUG: ส่งเวลา BKK เข้า Telegram ทุก 1 นาที เพื่อยืนยัน timezone + ว่า cron
-  // ทำงานจริง บน Railway (host เป็น SG). ลบ schedule นี้ออกเมื่อยืนยันเรียบร้อยแล้ว.
-  cron.schedule('* * * * *', () => {
-    telegramNotify(`[cron test] เวลา BKK = ${bangkokTimestamp()}`).catch(() => {});
-  }, tz);
 
   console.log('[cron] schedulers started (Asia/Bangkok)');
 }
