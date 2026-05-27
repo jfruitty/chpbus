@@ -221,8 +221,49 @@ async function upsertBooking(db, which, lineUserId, fields) {
   return true;
 }
 
+// ---- /getuserdatathisweek,/getuserdatanextweek : { status, data:{status,location,14keys} } ----
+async function getUserWeekData(db, which, lineUserId) {
+  const u = await db.query(
+    `SELECT e.approval_status, rs.seq, rs.name AS stop_name, r.name AS route_name
+     FROM chp2.employee e
+     LEFT JOIN chp2.route_stop rs ON rs.id = e.home_stop_id
+     LEFT JOIN chp2.route r       ON r.id = rs.route_id
+     WHERE e.line_user_id = $1`, [lineUserId]);
+  if (u.rows.length === 0) return { status: 'newuser', data: null };
+  const row = u.rows[0];
+  const grid = await getBookingGrid(db, which, lineUserId);
+  const data = { status: 'success', location: rebuildLocation(row.seq, row.route_name, row.stop_name) || 'N/A' };
+  for (let d = 1; d <= 7; d++) {
+    data[`${DAY_KEY[d]}(in)`] = grid[`${DAY_KEY[d]}(in)`] || 'ไม่ใช้';
+    data[`${DAY_KEY[d]}(out)`] = grid[`${DAY_KEY[d]}(out)`] || 'ไม่ใช้';
+  }
+  return { status: APPR_TO_DISPLAY[row.approval_status] || row.approval_status, data };
+}
+
+// ---- POST /approve : อนุมัติ booking สัปดาห์นี้ ตาม perid (เฉพาะที่มี home_stop) ----
+async function approveByPerids(db, ids) {
+  return db.query(
+    `UPDATE chp2.booking b SET dept_approval='approved', updated_at=now()
+     FROM chp2.employee e
+     WHERE b.employee_id = e.id AND e.per_id = ANY($1::text[])
+       AND e.home_stop_id IS NOT NULL
+       AND b.week_of = date_trunc('week',CURRENT_DATE)::date`, [ids]);
+}
+
+// ---- approval status ของ booking (ใช้ใน detail) : 'approved'|'standby' ----
+async function getBookingApprove(db, which, lineUserId) {
+  const offset = WEEK_OFFSET[which] ?? 0;
+  const { rows } = await db.query(
+    `SELECT b.dept_approval FROM chp2.booking b JOIN chp2.employee e ON e.id=b.employee_id
+     WHERE e.line_user_id=$1 AND b.week_of = date_trunc('week',CURRENT_DATE)::date + $2::int`,
+    [lineUserId, offset]);
+  if (rows.length === 0) return 'standby';
+  return rows[0].dept_approval === 'approved' ? 'approved' : 'standby';
+}
+
 module.exports = {
   getUserData, getBookingGrid, rebuildLocation, DAY_KEY, WEEK_OFFSET, apprToEnum,
   getMembers, updateApprovalStatus, updateDepartment, getDrivers, getPassengers, getDepartments, registerUser,
   upsertBooking, getDashboard, getRouteNames, updateThisweekApproval,
+  getUserWeekData, approveByPerids, getBookingApprove,
 };

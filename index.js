@@ -461,35 +461,7 @@ async function chpTransferSeattodayToSeatfromhr() {
 // chp.nextweek. Tagged with week_of (next Monday); only that week's snapshot is
 // replaced, so prior weeks accumulate and are never overwritten/lost. Atomic.
 async function chpSnapshotNextweekForHr() {
-  const weekOf = bangkokNextMondayISO();
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query('DELETE FROM chp.hrnextweek WHERE week_of = $1', [weekOf]);
-    await client.query(`
-      INSERT INTO chp.hrnextweek (
-        userid, route, department_approval,
-        monday_inbound, monday_outbound, tuesday_inbound, tuesday_outbound,
-        wednesday_inbound, wednesday_outbound, thursday_inbound, thursday_outbound,
-        friday_inbound, friday_outbound, saturday_inbound, saturday_outbound,
-        sunday_inbound, sunday_outbound, week_of
-      )
-      SELECT
-        userid, route, department_approval,
-        monday_inbound, monday_outbound, tuesday_inbound, tuesday_outbound,
-        wednesday_inbound, wednesday_outbound, thursday_inbound, thursday_outbound,
-        friday_inbound, friday_outbound, saturday_inbound, saturday_outbound,
-        sunday_inbound, sunday_outbound, $1
-      FROM chp.nextweek
-    `, [weekOf]);
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('chpSnapshotNextweekForHr error:', err);
-    throw err;
-  } finally {
-    client.release();
-  }
+  // chp2: HR ดู next week ตรง ๆ ผ่าน /hrnextweek (getDashboard('next')) — ไม่ต้อง snapshot
 }
 
 // --- Web auth routes ---
@@ -862,16 +834,20 @@ app.post('/removebustoday', requireRole('admin'), async (req, res) => {
 async function chpInsertPax(table, body) {
   const { perid, route, day, bound, time, bus_number, seat_number } = body;
   const u = await pool.query(
-    'SELECT userid, first_name, last_name, location FROM chp.users WHERE perid = $1',
-    [perid]
-  );
+    `SELECT e.line_user_id AS userid, e.first_name, e.last_name,
+            rs.seq, rs.name AS stop_name, r.name AS route_name
+     FROM chp2.employee e
+     LEFT JOIN chp2.route_stop rs ON rs.id = e.home_stop_id
+     LEFT JOIN chp2.route r       ON r.id = rs.route_id
+     WHERE e.per_id = $1`, [perid]);
   const row = u.rows[0] || {};
+  const homeLoc = row.route_name ? chp2Store.rebuildLocation(row.seq, row.route_name, row.stop_name) : null;
   return pool.query(
     `INSERT INTO ${table}
        (userid, perid, first_name, last_name, route, location, day, bound, "time", busnumber, seat)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
     [row.userid || null, perid, row.first_name || null, row.last_name || null,
-      route, row.location || null, day, bound, time,
+      route, homeLoc, day, bound, time,
       parseInt(bus_number, 10), parseInt(seat_number, 10)]
   );
 }
@@ -1308,14 +1284,9 @@ async function chpBookingData(client, table, userid) {
 }
 
 async function chpDetailThisweekData(client, userid) {
-  const thisweekResult = await client.query(
-    'SELECT department_approval FROM chp.thisweek WHERE userid = $1',
-    [userid]
-  );
-  const status = thisweekResult.rows.length
-    ? (thisweekResult.rows[0].department_approval === 'approved' ? 'approved' : 'standby')
-    : 'standby';
+  const status = await chp2Store.getBookingApprove(client, 'this', userid);  // chp2
 
+  // ที่นั่งยังอ่านจาก chp.seattoday (scratch ที่ engine ป้อน — approach A)
   const seatResult = await client.query(
     `SELECT route, day, bound, time, busnumber, seat
      FROM chp.seattoday
@@ -1375,56 +1346,8 @@ app.get('/getuserdatathisweek', async (req, res) => {
 
   const client = await pool.connect();
   try {
-    const userResult = await client.query(
-      'SELECT approvalstatus, location FROM chp.users WHERE userid = $1',
-      [userid]
-    );
-    let status, location;
-    if (userResult.rows.length === 0) {
-      status = 'newuser';
-    } else {
-      status = userResult.rows[0].approvalstatus;
-      location = userResult.rows[0].location;
-    }
-
-    const scheduleResult = await client.query(
-      `SELECT monday_inbound, monday_outbound,
-              tuesday_inbound, tuesday_outbound,
-              wednesday_inbound, wednesday_outbound,
-              thursday_inbound, thursday_outbound,
-              friday_inbound, friday_outbound,
-              saturday_inbound, saturday_outbound,
-              sunday_inbound, sunday_outbound
-       FROM chp.thisweek WHERE userid = $1`,
-      [userid]
-    );
-
-    if (scheduleResult.rows.length === 0) {
-      return res.json({ status, bookthisweekdata: null });
-    }
-
-    const s = scheduleResult.rows[0];
-    res.json({
-      status,
-      bookthisweekdata: {
-        status: 'success',
-        location: location || 'N/A',
-        'monday(in)':    s.monday_inbound    || 'ไม่ใช้',
-        'monday(out)':   s.monday_outbound   || 'ไม่ใช้',
-        'tuesday(in)':   s.tuesday_inbound   || 'ไม่ใช้',
-        'tuesday(out)':  s.tuesday_outbound  || 'ไม่ใช้',
-        'wednesday(in)': s.wednesday_inbound || 'ไม่ใช้',
-        'wednesday(out)':s.wednesday_outbound|| 'ไม่ใช้',
-        'thursday(in)':  s.thursday_inbound  || 'ไม่ใช้',
-        'thursday(out)': s.thursday_outbound || 'ไม่ใช้',
-        'friday(in)':    s.friday_inbound    || 'ไม่ใช้',
-        'friday(out)':   s.friday_outbound   || 'ไม่ใช้',
-        'saturday(in)':  s.saturday_inbound  || 'ไม่ใช้',
-        'saturday(out)': s.saturday_outbound || 'ไม่ใช้',
-        'sunday(in)':    s.sunday_inbound    || 'ไม่ใช้',
-        'sunday(out)':   s.sunday_outbound   || 'ไม่ใช้',
-      },
-    });
+    const r = await chp2Store.getUserWeekData(client, 'this', userid);   // chp2
+    res.json({ status: r.status, bookthisweekdata: r.data });
   } catch (err) {
     console.error('GET /getuserdatathisweek error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -1441,56 +1364,8 @@ app.get('/getuserdatanextweek', async (req, res) => {
 
   const client = await pool.connect();
   try {
-    const userResult = await client.query(
-      'SELECT approvalstatus, location FROM chp.users WHERE userid = $1',
-      [userid]
-    );
-    let status, location;
-    if (userResult.rows.length === 0) {
-      status = 'newuser';
-    } else {
-      status = userResult.rows[0].approvalstatus;
-      location = userResult.rows[0].location;
-    }
-
-    const scheduleResult = await client.query(
-      `SELECT monday_inbound, monday_outbound,
-              tuesday_inbound, tuesday_outbound,
-              wednesday_inbound, wednesday_outbound,
-              thursday_inbound, thursday_outbound,
-              friday_inbound, friday_outbound,
-              saturday_inbound, saturday_outbound,
-              sunday_inbound, sunday_outbound
-       FROM chp.nextweek WHERE userid = $1`,
-      [userid]
-    );
-
-    if (scheduleResult.rows.length === 0) {
-      return res.json({ status, booknextweekdata: null });
-    }
-
-    const s = scheduleResult.rows[0];
-    res.json({
-      status,
-      booknextweekdata: {
-        status: 'success',
-        location: location || 'N/A',
-        'monday(in)':    s.monday_inbound    || 'ไม่ใช้',
-        'monday(out)':   s.monday_outbound   || 'ไม่ใช้',
-        'tuesday(in)':   s.tuesday_inbound   || 'ไม่ใช้',
-        'tuesday(out)':  s.tuesday_outbound  || 'ไม่ใช้',
-        'wednesday(in)': s.wednesday_inbound || 'ไม่ใช้',
-        'wednesday(out)':s.wednesday_outbound|| 'ไม่ใช้',
-        'thursday(in)':  s.thursday_inbound  || 'ไม่ใช้',
-        'thursday(out)': s.thursday_outbound || 'ไม่ใช้',
-        'friday(in)':    s.friday_inbound    || 'ไม่ใช้',
-        'friday(out)':   s.friday_outbound   || 'ไม่ใช้',
-        'saturday(in)':  s.saturday_inbound  || 'ไม่ใช้',
-        'saturday(out)': s.saturday_outbound || 'ไม่ใช้',
-        'sunday(in)':    s.sunday_inbound    || 'ไม่ใช้',
-        'sunday(out)':   s.sunday_outbound   || 'ไม่ใช้',
-      },
-    });
+    const r = await chp2Store.getUserWeekData(client, 'next', userid);   // chp2
+    res.json({ status: r.status, booknextweekdata: r.data });
   } catch (err) {
     console.error('GET /getuserdatanextweek error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -1510,13 +1385,7 @@ app.get('/getdetailthisweek', async (req, res) => {
 
   const client = await pool.connect();
   try {
-    const thisweekResult = await client.query(
-      'SELECT department_approval FROM chp.thisweek WHERE userid = $1',
-      [userid]
-    );
-    const approval = thisweekResult.rows.length
-      ? thisweekResult.rows[0].department_approval
-      : null;
+    const approval = await chp2Store.getBookingApprove(client, 'this', userid);  // chp2
 
     const seatResult = await client.query(
       `SELECT route, day, bound, time, busnumber AS bus, seat
@@ -1588,60 +1457,17 @@ const BOOKING_COLUMNS_SQL = `
 // Supervisor approval page — shows their team's THIS week bookings.
 app.get('/supervisor', async (req, res) => {
   const name = req.query.name || '';
-  try {
-    const result = await pool.query(
-      `SELECT ${BOOKING_COLUMNS_SQL}
-       FROM chp.thisweek t
-       JOIN chp.users u ON u.userid = t.userid
-       WHERE u.supervisor = $1
-       ORDER BY u.first_name, u.last_name`,
-      [name]
-    );
-    res.render('supervisor', {
-      title: 'Supervisor Approval',
-      data: { data: result.rows.map(chpBookingToRow) },
-      name,
-    });
-  } catch (err) {
-    console.error('GET /supervisor error:', err);
-    res.status(500).send('Server Error');
-  }
+  // chp2 ยังไม่มีความสัมพันธ์ supervisor (employee.supervisor) — หน้านี้รอเพิ่มทีหลัง
+  // (ของเดิมก็พึ่ง column u.supervisor ที่อาจไม่มีใน chp.users) จึง render ว่างไว้ก่อน
+  res.render('supervisor', { title: 'Supervisor Approval', data: { data: [] }, name });
 });
 
 // HR sees ALL next-week bookings (for visibility before Friday rollover).
 app.get('/hrnextweek', async (req, res) => {
   try {
-    const cols = `u.perid, u.first_name, u.last_name,
-              n.route, u.location,
-              n.monday_inbound, n.monday_outbound,
-              n.tuesday_inbound, n.tuesday_outbound,
-              n.wednesday_inbound, n.wednesday_outbound,
-              n.thursday_inbound, n.thursday_outbound,
-              n.friday_inbound, n.friday_outbound,
-              n.saturday_inbound, n.saturday_outbound,
-              n.sunday_inbound, n.sunday_outbound,
-              n.department_approval, u.supervisor`;
-    // Prefer the HR snapshot (chpSnapshotNextweekForHr keeps it stable across
-    // the Friday rollover); fall back to live chp.nextweek until one exists.
-    let result = await pool.query(
-      `SELECT ${cols}
-       FROM chp.hrnextweek n
-       JOIN chp.users u ON u.userid = n.userid
-       WHERE n.week_of = (SELECT max(week_of) FROM chp.hrnextweek)
-       ORDER BY u.first_name, u.last_name`
-    );
-    if (result.rows.length === 0) {
-      result = await pool.query(
-        `SELECT ${cols}
-         FROM chp.nextweek n
-         JOIN chp.users u ON u.userid = n.userid
-         ORDER BY u.first_name, u.last_name`
-      );
-    }
-    res.render('hrnextweek', {
-      title: 'hrnextweek',
-      data: { data: result.rows.map(chpBookingToRow) },
-    });
+    // chp2: HR ดู next week ตรง ๆ (ไม่ต้อง snapshot). getDashboard คืน field ครบสำหรับ chpBookingToRow
+    const rows = await chp2Store.getDashboard(pool, 'next');
+    res.render('hrnextweek', { title: 'hrnextweek', data: { data: rows.map(chpBookingToRow) } });
   } catch (err) {
     console.error('GET /hrnextweek error:', err);
     res.status(500).send('Server Error');
@@ -1658,15 +1484,7 @@ app.post('/approve', async (req, res) => {
   }
   const client = await pool.connect();
   try {
-    const result = await client.query(
-      `UPDATE chp.thisweek t
-          SET department_approval = 'approved'
-         FROM chp.users u
-        WHERE u.userid = t.userid
-          AND u.perid = ANY($1::text[])
-          AND COALESCE(u.location, '') <> ''`,
-      [ids]
-    );
+    const result = await chp2Store.approveByPerids(client, ids);   // chp2
     res.json({ ok: true, updated: result.rowCount });
   } catch (err) {
     console.error('POST /approve error:', err);
