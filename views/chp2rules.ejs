@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="th">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= title %> — เงื่อนไขจัดรถ</title>
+  <link href="/css/driver.css" rel="stylesheet" type="text/css">
+  <style>
+    /* chp2 rules sub-navigation (pill bar under the page header) */
+    .chp2-subnav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .chp2-subnav a {
+      text-decoration: none; font-size: 13px; font-weight: 600; color: #475569;
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 999px; padding: 7px 14px;
+    }
+    .chp2-subnav a:hover { background: #f1f5f9; }
+    .chp2-subnav a.active { background: #4a8cf7; color: #fff; border-color: #4a8cf7; }
+
+    /* rules body — scoped so these bare-element rules don't leak into the shell */
+    .chp2-body { flex: 1 1 auto; min-height: 0; overflow: auto; color: #1a2027; }
+    .chp2-body table { border-collapse: collapse; width: 100%; background: #fff; margin: 8px 0 20px; }
+    .chp2-body th, .chp2-body td { border: 1px solid #dde3e8; padding: 6px 8px; font-size: 14px; text-align: left; vertical-align: middle; }
+    .chp2-body th { background: #eef2f5; }
+    .chp2-body input[type=number], .chp2-body input[type=text], .chp2-body select { padding: 4px; border: 1px solid #ccc; border-radius: 4px; }
+    .chp2-body input[type=number] { width: 70px; }
+    .chp2-body button { padding: 5px 10px; border: 0; border-radius: 4px; background: #0f4c81; color: #fff; cursor: pointer; }
+    .chp2-body button.sec { background: #6b7b8a; }
+    .chp2-body button.danger { background: #b3261e; }
+    .chp2-body .card { background: #fff; border: 1px solid #dde3e8; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
+    .chp2-body .err { color: #b3261e; }
+    .chp2-body .warn { color: #9a6700; }
+    .chp2-body .ok { color: #1a7f37; }
+    .chp2-body .muted { color: #6b7b8a; font-size: 13px; }
+    .chp2-body form.inline { display: inline; }
+    .chp2-body code { background: #eef2f5; padding: 1px 4px; border-radius: 3px; }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <nav class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo"></div>
+        <%- include('partials/adminmenu') %>
+      </div>
+      <div class="footer">
+        <div class="company-info">
+          <p>Resonac</p>
+          <p>CHP</p>
+        </div>
+        <a href="/logout" style="display:block;margin-top:12px;padding:8px 12px;background:#ef4444;color:#fff;text-decoration:none;border-radius:6px;font-size:13px;text-align:center;">ออกจากระบบ</a>
+      </div>
+    </nav>
+    <main class="main-content">
+      <header class="header">
+        <div class="user-info">
+          <h1 class="page-title" style="margin:0;font-size:20px;">เงื่อนไขจัดรถ (RMT)</h1>
+        </div>
+      </header>
+      <%
+        var _sub = [
+          ['/', 'หน้าหลัก'], ['/routes', 'flag ราย route'], ['/groups', 'กลุ่มรวม'],
+          ['/rules', 'กฎจุด/ทิศ'], ['/dryrun', 'ลองจัดดู'],
+        ];
+        var _cp = (typeof currentPath !== 'undefined' && currentPath) ? currentPath : '';
+      %>
+      <nav class="chp2-subnav">
+        <% _sub.forEach(function (s) {
+             var href = base + s[0];
+             var isAct = (s[0] === '/') ? (_cp === base || _cp === base + '/') : (_cp.indexOf(base + s[0]) === 0);
+        %>
+        <a href="<%= href %>"<%- isAct ? ' class="active"' : '' %>><%= s[1] %></a>
+        <% }); %>
+      </nav>
+      <div class="chp2-body"><%- bodyHtml %></div>
+    </main>
+  </div>
+</body>
+
+</html>

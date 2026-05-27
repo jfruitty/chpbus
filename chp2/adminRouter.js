@@ -36,6 +36,7 @@ function layout(title, base, body) {
  <a href="/member" style="margin-left:auto">← กลับ Admin</a>
 </header><main>${body}</main></body></html>`;
 }
+function mk(title, base, body) { return { title, base, bodyHtml: body }; }
 const boundOpts = (sel) => ['', 'inbound', 'outbound']
   .map(b => `<option value="${b}"${b === (sel ?? '') ? ' selected' : ''}>${b === '' ? '(ทั้งสองทิศ)' : b}</option>`).join('');
 const routeOpts = (routes, sel, blank) =>
@@ -83,7 +84,7 @@ router.get('/', async (req, res, next) => {
     const issuesHtml = issues.length
       ? `<ul>${issues.map(i => `<li class="${i.level === 'error' ? 'err' : 'warn'}">[${i.level}] ${esc(i.msg)}</li>`).join('')}</ul>`
       : `<p class="ok">✓ ไม่พบปัญหา</p>`;
-    res.send(layout('หน้าหลัก', base, `
+    res.render('chp2rules', mk('หน้าหลัก', base, `
       <div class="card"><b>สรุป:</b> ${counts.routes} สาย · ${counts.groups} กลุ่มรวม · ${counts.rules} กฎจุด/ทิศ</div>
       <div class="card"><h3 style="margin-top:0">ตรวจความถูกต้อง (validation)</h3>${issuesHtml}</div>
       <div class="card"><h3 style="margin-top:0">ลองจัดดูก่อนใช้จริง</h3>
@@ -108,7 +109,7 @@ router.get('/routes', async (req, res, next) => {
         busRoute <select name="bus_route_id">${routeOpts(routes, r.bus_route_id, true)}</select>
         cap <input type="number" name="seat_capacity" value="${r.seat_capacity}">
         <button>บันทึก</button></form>`}</td></tr>`).join('');
-    res.send(layout('flag ราย route', base, `<p class="muted">P1=never_merge · P5=bus_threshold(+busRoute) · P7=min_solo_pax · capacity=ที่นั่งต่อคัน</p>
+    res.render('chp2rules', mk('flag ราย route', base, `<p class="muted">P1=never_merge · P5=bus_threshold(+busRoute) · P7=min_solo_pax · capacity=ที่นั่งต่อคัน</p>
       <table><tr><th>code</th><th>สาย</th><th>เงื่อนไข</th></tr>${rows}</table>`));
   } catch (e) { next(e); }
 });
@@ -152,7 +153,7 @@ router.get('/groups', async (req, res, next) => {
             <select name="route_id">${routeOpts(routes, null, false)}</select><button class="sec">+ เพิ่มสาย</button></form>
         </div></div>`;
     }).join('');
-    res.send(layout('กลุ่มรวม', base, `${cards}
+    res.render('chp2rules', mk('กลุ่มรวม', base, `${cards}
       <div class="card"><h3 style="margin-top:0">+ สร้างกลุ่มใหม่</h3>
        <form action="${base}/groups" method="post">
         code <input type="text" name="code" required>
@@ -212,7 +213,7 @@ router.get('/rules', async (req, res, next) => {
       <td><select name="else_group_alt_id">${groupOpts(groups, d.else_group_alt_id, true)}</select></td>
       <td><button>บันทึก</button></form>
         <form class="inline" action="${base}/rules/${d.id}/delete" method="post"><button class="danger">ลบ</button></form></td></tr>`).join('');
-    res.send(layout('กฎจุด/ทิศ', base, `<p class="muted">ถ้ามีคนในช่วงจุด [from..to] (ทิศที่ระบุ) → จัดเอง ; ไม่งั้นยุบเข้า else group (หรือ alt)</p>
+    res.render('chp2rules', mk('กฎจุด/ทิศ', base, `<p class="muted">ถ้ามีคนในช่วงจุด [from..to] (ทิศที่ระบุ) → จัดเอง ; ไม่งั้นยุบเข้า else group (หรือ alt)</p>
       <table><tr><th>priority</th><th>สาย</th><th>ทิศ</th><th>ช่วงจุด solo</th><th>ยุบเข้า</th><th>หรือ</th><th></th></tr>${rows}</table>
       <div class="card"><h3 style="margin-top:0">+ เพิ่มกฎ</h3><form action="${base}/rules" method="post">
         pri <input type="number" name="priority" value="9">
@@ -265,9 +266,9 @@ router.get('/dryrun', async (req, res, next) => {
   try {
     const base = req.baseUrl, date = String(req.query.date || '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
-      return res.send(layout('ลองจัดดู', base, `<div class="card"><form action="${base}/dryrun" method="get">วันที่ <input type="text" name="date" placeholder="YYYY-MM-DD" required><button>ลองจัดดู</button></form></div>`));
+      return res.render('chp2rules', mk('ลองจัดดู', base, `<div class="card"><form action="${base}/dryrun" method="get">วันที่ <input type="text" name="date" placeholder="YYYY-MM-DD" required><button>ลองจัดดู</button></form></div>`));
     const { weekOf, dow, plan } = await planDate(pool, date);
-    res.send(layout('ลองจัดดู', base, renderPlan(base, date, weekOf, dow, plan, req.query.committed === '1')));
+    res.render('chp2rules', mk('ลองจัดดู', base, renderPlan(base, date, weekOf, dow, plan, req.query.committed === '1')));
   } catch (e) { next(e); }
 });
 router.post('/commit', async (req, res, next) => {

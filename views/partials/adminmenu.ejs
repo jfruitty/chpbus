@@ -1,24 +1,67 @@
 <%
-  // Shared admin sidebar menu — included by every admin page so the nav is
-  // identical everywhere and links to all functions (incl. the chp2 rules
-  // editor). The active item is derived from res.locals.currentPath, set by a
-  // middleware in index.js, so pages don't need to pass anything in.
-  var _p = (typeof currentPath !== 'undefined') ? currentPath : '';
-  function _act(path) { return _p === path ? ' class="active"' : ''; }
+  // Shared admin sidebar menu — included by every admin page (and the chp2
+  // rules shell) so the nav is identical everywhere. Items are organised into
+  // collapsible groups; the group holding the current page is the only one
+  // expanded on load. Active state comes from res.locals.currentPath (set by a
+  // middleware in index.js); /chp2/rules matches by prefix so its sub-pages
+  // keep the item highlighted. Self-contained styling (unique .adminmenu*
+  // classes) so it looks the same regardless of which page CSS is loaded.
+  var _p = (typeof currentPath !== 'undefined' && currentPath) ? currentPath : '';
+  function _isActive(href) { return _p === href || _p.indexOf(href + '/') === 0; }
+  var _groups = [
+    { title: 'สมาชิก & การจอง', items: [
+      ['/member', 'Member'], ['/thisweekdashboard', 'Thisweek'],
+      ['/nextweekdashboard', 'Nextweek'], ['/sumthisweek', 'Sumthisweek'] ] },
+    { title: 'จัดรถ', items: [
+      ['/driver', 'Driver (เสนอ)'], ['/seatdriver', 'Seat (เสนอ)'],
+      ['/bustoday', 'Bus (วันนี้)'], ['/seattoday', 'Seat (วันนี้)'] ] },
+    { title: 'ผล HR & ประวัติ', items: [
+      ['/busfromhr', 'BusfromHr'], ['/seatfromhr', 'SeatfromHr'],
+      ['/bushistory', 'Bus History'], ['/seathistory', 'Seat History'] ] },
+    { title: 'ระบบ', items: [
+      ['/chp2/rules', 'เงื่อนไขจัดรถ (RMT)'], ['/changelog', 'Log'] ] },
+  ];
+  var _openIdx = -1;
+  _groups.forEach(function (g, i) { if (g.items.some(function (it) { return _isActive(it[0]); })) _openIdx = i; });
+  if (_openIdx === -1) _openIdx = 0;
 %>
-<ul class="menu">
-  <li<%- _act('/member') %>><a href="/member">Member</a></li>
-  <li<%- _act('/thisweekdashboard') %>><a href="/thisweekdashboard">Thisweek</a></li>
-  <li<%- _act('/nextweekdashboard') %>><a href="/nextweekdashboard">Nextweek</a></li>
-  <li<%- _act('/sumthisweek') %>><a href="/sumthisweek">Sumthisweek</a></li>
-  <li<%- _act('/driver') %>><a href="/driver">Driver (เสนอ)</a></li>
-  <li<%- _act('/seatdriver') %>><a href="/seatdriver">Seat (เสนอ)</a></li>
-  <li<%- _act('/bustoday') %>><a href="/bustoday">Bus (วันนี้)</a></li>
-  <li<%- _act('/seattoday') %>><a href="/seattoday">Seat (วันนี้)</a></li>
-  <li<%- _act('/busfromhr') %>><a href="/busfromhr">BusfromHr</a></li>
-  <li<%- _act('/seatfromhr') %>><a href="/seatfromhr">SeatfromHr</a></li>
-  <li<%- _act('/bushistory') %>><a href="/bushistory">Bus History</a></li>
-  <li<%- _act('/seathistory') %>><a href="/seathistory">Seat History</a></li>
-  <li<%- _act('/chp2/rules') %>><a href="/chp2/rules">เงื่อนไขจัดรถ (RMT)</a></li>
-  <li<%- _act('/changelog') %>><a href="/changelog">Log</a></li>
-</ul>
+<style>
+  .adminmenu { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .adminmenu .grp-title {
+    width: 100%; text-align: left; background: none; border: none; cursor: pointer;
+    font-family: inherit; font-size: 11px; font-weight: 800; letter-spacing: .4px;
+    text-transform: uppercase; color: #94a3b8; padding: 12px 14px 6px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .adminmenu .grp-title:hover { color: #64748b; }
+  .adminmenu .grp-title .caret { font-size: 9px; transition: transform .15s ease; }
+  .adminmenu .grp.collapsed .grp-title .caret { transform: rotate(-90deg); }
+  .adminmenu .grp-items { list-style: none; margin: 0 0 4px; padding: 0; }
+  .adminmenu .grp.collapsed .grp-items { display: none; }
+  .adminmenu .grp-items a {
+    display: block; text-decoration: none; color: #475569; font-weight: 600;
+    font-size: 14px; padding: 9px 14px 9px 24px; border-radius: 9px;
+    transition: background .15s ease, color .15s ease;
+  }
+  .adminmenu .grp-items a:hover { background: #f1f5f9; }
+  .adminmenu .grp-items a.active { background: #4a8cf7; color: #fff; box-shadow: 0 4px 12px rgba(74,140,247,.35); }
+</style>
+<nav class="adminmenu">
+  <% _groups.forEach(function (g, i) { %>
+  <div class="grp<%= i === _openIdx ? '' : ' collapsed' %>">
+    <button type="button" class="grp-title"><%= g.title %> <span class="caret">▾</span></button>
+    <ul class="grp-items">
+      <% g.items.forEach(function (it) { %>
+      <li><a href="<%= it[0] %>"<%- _isActive(it[0]) ? ' class="active"' : '' %>><%= it[1] %></a></li>
+      <% }); %>
+    </ul>
+  </div>
+  <% }); %>
+</nav>
+<script>
+  (function () {
+    document.querySelectorAll('.adminmenu .grp-title').forEach(function (btn) {
+      btn.addEventListener('click', function () { btn.closest('.grp').classList.toggle('collapsed'); });
+    });
+  })();
+</script>
