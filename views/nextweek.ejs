@@ -335,7 +335,7 @@
                     const option = document.createElement('option');
                     option.value = timeSlots[i];
                     option.textContent = timeSlots[i];
-                    if (data[day.substring(3).toLowerCase()] === timeSlots[i]) {
+                    if ((data.booknextweekData || data)[day.substring(3).toLowerCase()] === timeSlots[i]) {
                         option.selected = true;
                     }
                     select.appendChild(option);
