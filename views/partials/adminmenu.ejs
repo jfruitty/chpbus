@@ -1,0 +1,24 @@
+<%
+  // Shared admin sidebar menu — included by every admin page so the nav is
+  // identical everywhere and links to all functions (incl. the chp2 rules
+  // editor). The active item is derived from res.locals.currentPath, set by a
+  // middleware in index.js, so pages don't need to pass anything in.
+  var _p = (typeof currentPath !== 'undefined') ? currentPath : '';
+  function _act(path) { return _p === path ? ' class="active"' : ''; }
+%>
+<ul class="menu">
+  <li<%- _act('/member') %>><a href="/member">Member</a></li>
+  <li<%- _act('/thisweekdashboard') %>><a href="/thisweekdashboard">Thisweek</a></li>
+  <li<%- _act('/nextweekdashboard') %>><a href="/nextweekdashboard">Nextweek</a></li>
+  <li<%- _act('/sumthisweek') %>><a href="/sumthisweek">Sumthisweek</a></li>
+  <li<%- _act('/driver') %>><a href="/driver">Driver (เสนอ)</a></li>
+  <li<%- _act('/seatdriver') %>><a href="/seatdriver">Seat (เสนอ)</a></li>
+  <li<%- _act('/bustoday') %>><a href="/bustoday">Bus (วันนี้)</a></li>
+  <li<%- _act('/seattoday') %>><a href="/seattoday">Seat (วันนี้)</a></li>
+  <li<%- _act('/busfromhr') %>><a href="/busfromhr">BusfromHr</a></li>
+  <li<%- _act('/seatfromhr') %>><a href="/seatfromhr">SeatfromHr</a></li>
+  <li<%- _act('/bushistory') %>><a href="/bushistory">Bus History</a></li>
+  <li<%- _act('/seathistory') %>><a href="/seathistory">Seat History</a></li>
+  <li<%- _act('/chp2/rules') %>><a href="/chp2/rules">เงื่อนไขจัดรถ (RMT)</a></li>
+  <li<%- _act('/changelog') %>><a href="/changelog">Log</a></li>
+</ul>

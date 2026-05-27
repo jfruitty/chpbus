@@ -142,6 +142,8 @@ chpbus/
 
 ### View layer
 
+**Sidebar เมนู admin (ทุกหน้า):** ทุกหน้า admin (member-group + driver-group ทั้ง 13 หน้า) include partial เดียวกัน [views/partials/adminmenu.ejs](views/partials/adminmenu.ejs) — เมนูรวมลิงก์ครบทุกฟังก์ชัน รวมถึง **เงื่อนไขจัดรถ (RMT) → `/chp2/rules`**. รายการ active มาจาก `res.locals.currentPath` (middleware ที่ [index.js:91](index.js#L91) เซ็ต `req.path` ให้ทุก render) แก้เมนูที่เดียวมีผลทุกหน้า. หน้า `/chp2/rules` เป็น HTML standalone (จาก `adminRouter`) ไม่ได้ใช้ partial นี้ แต่มีลิงก์ "← กลับ Admin" กลับมา `/member`
+
 EJS templates อยู่ใน [views/](views/), static อยู่ใน [public/](public/) (mount ที่ `/static` ด้วย) มี 2 รูปแบบ:
 - **server-rendered** (วน `rows` ใน EJS): `member`, `thisweekdashboard`, `nextweekdashboard`, `sumthisweek`, `supervisor`, `hrnextweek`, `busfromhr`, `seatfromhr`
 - **client-rendered** (`<tbody>` ว่าง, JS fetch endpoint `*json` มา build เอง): `driver`, `seatdriver`, `bustoday`, `seattoday`, `changelog` และ LIFF app (`register`, `nextweek`, `thisweek`) — contract ของ field อยู่ใน `public/js/*.js` ไม่ใช่ใน template

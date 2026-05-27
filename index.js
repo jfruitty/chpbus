@@ -88,6 +88,11 @@ app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+// Expose the current path to every EJS render so the shared admin sidebar
+// partial (views/partials/adminmenu.ejs) can mark the active menu item
+// without each route having to pass it in.
+app.use((req, res, next) => { res.locals.currentPath = req.path; next(); });
+
 // --- Change log -------------------------------------------------------------
 // Append-only audit trail in chp.change_log so data changes can be traced and
 // mistakes corrected. chpLog never throws (logging must not break the action).

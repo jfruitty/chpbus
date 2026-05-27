@@ -33,6 +33,7 @@ function layout(title, base, body) {
 </style></head><body>
 <header><h1>CHP เงื่อนไขรวมสาย</h1>
  <a href="${base}/">หน้าหลัก</a><a href="${base}/routes">flag ราย route</a><a href="${base}/groups">กลุ่มรวม</a><a href="${base}/rules">กฎจุด/ทิศ</a><a href="${base}/dryrun">ลองจัดดู</a>
+ <a href="/member" style="margin-left:auto">← กลับ Admin</a>
 </header><main>${body}</main></body></html>`;
 }
 const boundOpts = (sel) => ['', 'inbound', 'outbound']
