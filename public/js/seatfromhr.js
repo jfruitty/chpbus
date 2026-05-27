@@ -72,7 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
 
   document.getElementById('downloadCsvButton').addEventListener('click', () => {
-    fetch('/download-csv-seatfromhr')
+    fetch('/download-excel-seatfromhr')
       .then(response => {
         if (response.ok) {
           return response.blob();
@@ -84,7 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        a.download = 'seatfromhr.txt';
+        a.download = 'seatfromhr.xlsx';
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);

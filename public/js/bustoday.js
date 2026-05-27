@@ -145,7 +145,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('downloadCsvButton').addEventListener('click', () => {
-    fetch('/download-csv-bustoday')
+    fetch('/download-excel-bustoday')
       .then(response => {
         if (response.ok) {
           return response.blob();
@@ -157,7 +157,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        a.download = 'driver.txt';
+        a.download = 'bustoday.xlsx';
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);

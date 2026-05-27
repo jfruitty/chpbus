@@ -142,7 +142,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('downloadCsvButton').addEventListener('click', () => {
-    fetch('/download-csv-driver')
+    fetch('/download-excel-driver')
       .then(response => {
         if (response.ok) {
           return response.blob();
@@ -154,7 +154,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        a.download = 'driver.txt';
+        a.download = 'driver.xlsx';
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);

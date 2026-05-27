@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Change Log</title>
+    <link href="/css/driver.css" rel="stylesheet" type="text/css">
+    <link href="/css/modal-form.css" rel="stylesheet" type="text/css">
+    <style>
+        .detail-cell { max-width: 420px; white-space: pre-wrap; word-break: break-word; font-size: 12px; color: #475569; }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo"></div>
+                <ul class="menu">
+                    <li><a href="/driver">Driver</a></li>
+                    <li><a href="/seatdriver">Seat</a></li>
+                    <li><a href="/busfromhr">BusfromHr</a></li>
+                    <li><a href="/seatfromhr">SeatfromHr</a></li>
+                    <li class="active"><a href="/changelog">Log</a></li>
+                </ul>
+            </div>
+            <div class="footer">
+                <div class="company-info">
+                    <p>Resonac</p>
+                    <p>CHP</p>
+                </div>
+                <a href="/logout" style="display:block;margin-top:12px;padding:8px 12px;background:#ef4444;color:#fff;text-decoration:none;border-radius:6px;font-size:13px;text-align:center;">ออกจากระบบ</a>
+            </div>
+        </nav>
+        <main class="main-content">
+            <header class="header">
+                <div class="user-info">
+                    <span>CHP Shuttle Bus — ประวัติการเปลี่ยนแปลง</span>
+                </div>
+                <div class="actions"></div>
+            </header>
+            <section class="filter-bar"></section>
+            <section class="table-section">
+                <table class="approval-table">
+                    <thead>
+                        <tr>
+                            <th>ลำดับ</th>
+                            <th>เวลา</th>
+                            <th>ผู้ทำ</th>
+                            <th>การกระทำ</th>
+                            <th>รหัสแถว</th>
+                            <th>รายละเอียด</th>
+                        </tr>
+                    </thead>
+                    <tbody id="changelogBody">
+                        <!-- rows inserted by changelog.js -->
+                    </tbody>
+                </table>
+            </section>
+        </main>
+    </div>
+    <script src="/js/changelog.js"></script>
+    <script src="/js/table-tools.js"></script>
+</body>
+
+</html>
