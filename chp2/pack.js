@@ -34,13 +34,15 @@ async function loadPassengers(db, serviceDateStr) {
   const weekOf = ymd(mondayOf(d));
   const dow = isoDow(d);
   const { rows } = await db.query(`
-    SELECT e.id AS employee_id, e.first_name, e.last_name,
-           rs.route_id, rs.seq AS stop_seq, rs.id AS stop_id,
+    SELECT e.id AS employee_id, e.line_user_id, e.per_id, e.first_name, e.last_name,
+           rs.route_id, rs.seq AS stop_seq, rs.id AS stop_id, rs.name AS stop_name,
+           hr.name AS home_route_name,
            br.bound, to_char(br.depart_time,'HH24:MI') AS depart_time
     FROM chp2.booking b
     JOIN chp2.booking_ride br ON br.booking_id = b.id
     JOIN chp2.employee e      ON e.id = b.employee_id
     JOIN chp2.route_stop rs   ON rs.id = b.pickup_stop_id
+    LEFT JOIN chp2.route hr   ON hr.id = rs.route_id
     WHERE b.week_of = $1 AND b.dept_approval = 'approved' AND br.day_of_week = $2
   `, [weekOf, dow]);
   return { rows, weekOf, dow };
@@ -174,6 +176,7 @@ async function planDate(db, serviceDate) {
         plan.push({
           service_date: serviceDate, bound: slot.bound, depart_time: slot.depart_time,
           route_id: v.resultRouteId, route_code: route ? route.code : '?',
+          route_name: route ? route.name : '',
           kind: v.kind, bus_number: bus.bus_number, capacity: v.capacity,
           seats: bus.seats,
         });
@@ -212,4 +215,33 @@ async function commitPlan(db, serviceDate, plan, stage = 'system') {
   }
 }
 
-module.exports = { planDate, commitPlan, planSlot, assignSeats, isoDow, mondayOf };
+// เขียนแผนลงตาราง scratch เดิม chp.driver + chp.seatdriver (รูปแบบ chp)
+// ใช้ตอน cutover แบบ A: engine ป้อน pipeline เดิม, UI/transitions/LINE ไม่ต้องแก้
+const DAY_NAMES_TH = [null, 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
+const BOUND_TH = { inbound: 'ขาเข้า', outbound: 'ขาออก' };
+function rebuildLoc(seq, route, stop) {
+  if (!route) return '';
+  return `${seq == null ? '' : `[${String(seq).padStart(2, '0')}]`}${route}${stop ? ' ' + stop : ''}`;
+}
+async function commitToChp(db, serviceDate, plan) {
+  const dow = isoDow(new Date(serviceDate + 'T00:00:00Z'));
+  const dayTh = DAY_NAMES_TH[dow];
+  for (const bus of plan) {
+    const boundTh = BOUND_TH[bus.bound] || bus.bound;
+    await db.query(
+      `INSERT INTO chp.driver (route, day, bound, "time", bus_number, service_date)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [bus.route_name, dayTh, boundTh, bus.depart_time, bus.bus_number, serviceDate]);
+    for (const s of bus.seats) {
+      const p = s.pax;
+      await db.query(
+        `INSERT INTO chp.seatdriver (userid, perid, first_name, last_name, route, location, day, bound, "time", busnumber, seat, service_date)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [p.line_user_id, p.per_id, p.first_name, p.last_name, bus.route_name,
+         rebuildLoc(p.stop_seq, p.home_route_name, p.stop_name), dayTh, boundTh,
+         bus.depart_time, bus.bus_number, s.seat_no, serviceDate]);
+    }
+  }
+}
+
+module.exports = { planDate, commitPlan, commitToChp, planSlot, assignSeats, isoDow, mondayOf };

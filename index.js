@@ -13,6 +13,7 @@ require('dotenv').config();
 
 // chp2 adapter layer (อ่าน/เขียน schema chp2 คืนรูปแบบเดิม) — ใช้ระหว่าง cutover
 const chp2Store = require('./chp2/store');
+const chp2Pack = require('./chp2/pack');   // packing engine ตามกฎ RMT
 
 const app = express();
 
@@ -1725,12 +1726,15 @@ app.get('/drivercheck', async (req, res) => {
 // --- Phase 3: pipeline endpoints (scheduled by external cron) ---
 
 async function chpAutoApprove() {
-  await pool.query("UPDATE chp.thisweek SET department_approval = 'approved'");
+  // chp2: อนุมัติ booking ของสัปดาห์นี้เป็นต้นไป (เผื่อ Friday จัดของจันทร์สัปดาห์หน้า)
+  await pool.query(
+    "UPDATE chp2.booking SET dept_approval='approved', updated_at=now() WHERE week_of >= date_trunc('week',CURRENT_DATE)::date");
 }
 
 // autoresetapprove: set every thisweek booking back to pending (un-approve all).
 async function chpResetApprove() {
-  await pool.query("UPDATE chp.thisweek SET department_approval = 'pending'");
+  await pool.query(
+    "UPDATE chp2.booking SET dept_approval='pending', updated_at=now() WHERE week_of = date_trunc('week',CURRENT_DATE)::date");
 }
 
 async function chpClearDriverState() {
@@ -2055,17 +2059,8 @@ function bangkokNextMondayISO() {
 // Apps Script invokes this inline from calculatedaily on Friday; expose it
 // separately for manual triggering or a dedicated Friday cron.
 app.get('/weekly', async (req, res) => {
-  try {
-    await chpTransferThisweekToLastweek();
-    await chpTransferNextweekToThisweek();
-    await sendPushMessage(adminLineUsers, 'CHP weekly rollover เสร็จ');
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('GET /weekly error:', err);
-    const u = (process.env.ERROR_NOTIFY_USER || '').trim();
-    if (u) await sendPushMessage([u], `CHP /weekly error: ${err.message}`);
-    res.status(500).json({ error: err.message });
-  }
+  // chp2: booking ใช้ week_of -> "สัปดาห์นี้/หน้า" เลื่อนอัตโนมัติตามวันที่ ไม่ต้อง rollover
+  res.json({ ok: true, note: 'chp2: no rollover needed (week_of based)' });
 });
 
 // calculatedaily — main daily packing run (cron at 14:30 Asia/Bangkok Mon–Fri,
@@ -2091,35 +2086,18 @@ async function runDaily() {
   await chpAutoApprove();
   await chpClearDriverState();
 
-  if (dayOfWeek === 5) {
-    // Friday: pack PM of Fri/Sat/Sun + AM of Sat/Sun, rollover, then AM of Mon.
-    await chpPackRoute1to10After1400(5);
-    await chpPackRoute11to14After1400(5);
-    await chpPackRoute1to10Before1400(6);
-    await chpPackRoute11to14Before1400(6);
-    await chpPackRoute1to10After1400(6);
-    await chpPackRoute11to14After1400(6);
-    await chpPackRoute1to10Before1400(7);
-    await chpPackRoute11to14Before1400(7);
-    await chpPackRoute1to10After1400(7);
-    await chpPackRoute11to14After1400(7);
-
-    await chpTransferThisweekToLastweek();
-    await chpTransferNextweekToThisweek();
-    await chpAutoApprove();
-
-    await chpPackRoute1to10Before1400(1);
-    await chpPackRoute11to14Before1400(1);
-  } else {
-    // Mon–Thu: pack today's PM + tomorrow's AM
-    await chpPackRoute1to10After1400(dayOfWeek);
-    await chpPackRoute1to10Before1400(dayOfWeek + 1);
-    await chpPackRoute11to14After1400(dayOfWeek);
-    await chpPackRoute11to14Before1400(dayOfWeek + 1);
+  // chp2 engine: จัดทั้งวัน (ทุก slot) แล้วเขียนผลรูปแบบเดิมลง chp.driver/seatdriver
+  // ไม่ต้อง rollover (booking ใช้ week_of) — engine อ่าน booking ของวันนั้นตาม week_of เอง
+  //   ศุกร์: จัด ศ/ส/อา/จ (0..3) ; วันอื่น: วันนี้+พรุ่งนี้ (0..1)
+  const spans = (dayOfWeek === 5) ? [0, 1, 2, 3] : [0, 1];
+  const dates = spans.map((n) => bangkokDateISO(n));
+  for (const d of dates) {
+    const { plan } = await chp2Pack.planDate(pool, d);
+    await chp2Pack.commitToChp(pool, d, plan);
   }
 
-  await sendPushMessage(adminLineUsers, `CHP daliy pack เสร็จ (วัน ${dayOfWeek})`);
-  return { ok: true, day: dayOfWeek };
+  await sendPushMessage(adminLineUsers, `CHP daliy pack เสร็จ (วัน ${dayOfWeek}: ${dates.join(', ')})`);
+  return { ok: true, day: dayOfWeek, dates };
 }
 
 app.get('/daliy', async (req, res) => {
@@ -2145,13 +2123,8 @@ app.get('/autoresetapprove', async (req, res) => {
 });
 
 app.get('/tranfernextweekforhr', async (req, res) => {
-  try {
-    await chpSnapshotNextweekForHr();
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('GET /tranfernextweekforhr error:', err);
-    res.status(500).json({ error: err.message });
-  }
+  // chp2: HR ดู next week ได้ตรง ๆ ผ่าน /hrnextweek (getDashboard('next')) — ไม่ต้อง snapshot
+  res.json({ ok: true, note: 'chp2: HR reads next week directly; snapshot not needed' });
 });
 
 // POST /driversendtohr — driver dispatches today's plan to HR. Mirrors the
