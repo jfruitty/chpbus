@@ -751,30 +751,46 @@ app.post('/update-approval-department-thisweek', requireRole('admin'), async (re
   }
 });
 
+// Build the passenger-count matrix for the weekly summary page.
+// which = 'this' | 'next'. Reads chp2.booking via getDashboard and tallies
+// head-count per route × day × bound × time. Returns { rows, count } where
+// count[routeName][day] = { inbound: {HH:MM: n}, outbound: {HH:MM: n} }.
+async function buildSumData(which) {
+  const rows = await chp2Store.getRouteNames(pool);            // chp2 (ชื่อสาย)
+  const dash = await chp2Store.getDashboard(pool, which);      // chp2.booking ของสัปดาห์นั้น
+  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const count = {};
+  dash.forEach((item) => {
+    const route = item.route;
+    if (!route) return;                                        // ข้ามคนที่ยังไม่มีสาย/จุด
+    if (!count[route]) count[route] = {};
+    days.forEach((day) => {
+      if (!count[route][day]) count[route][day] = { inbound: {}, outbound: {} };
+      const inT = item[`${day}_inbound`];
+      const outT = item[`${day}_outbound`];
+      if (inT && inT !== 'ไม่ใช้') count[route][day].inbound[inT] = (count[route][day].inbound[inT] || 0) + 1;
+      if (outT && outT !== 'ไม่ใช้') count[route][day].outbound[outT] = (count[route][day].outbound[outT] || 0) + 1;
+    });
+  });
+  return { rows, count };
+}
+
 app.get('/sumthisweek', requireRole('admin'), async (req, res) => {
   try {
-    const rows = await chp2Store.getRouteNames(pool);          // chp2 (ชื่อสาย)
-    const thisweekRows = await chp2Store.getDashboard(pool, 'this');
-
-    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-    const count = {};
-    thisweekRows.forEach((item) => {
-      const route = item.route;
-      if (!count[route]) count[route] = {};
-      days.forEach((day) => {
-        const inboundTime = item[`${day}_inbound`];
-        const outboundTime = item[`${day}_outbound`];
-        if (!count[route][day]) count[route][day] = { inbound: {}, outbound: {} };
-        if (!count[route][day].inbound[inboundTime]) count[route][day].inbound[inboundTime] = 0;
-        if (!count[route][day].outbound[outboundTime]) count[route][day].outbound[outboundTime] = 0;
-        count[route][day].inbound[inboundTime]++;
-        count[route][day].outbound[outboundTime]++;
-      });
-    });
-
-    res.render('sumthisweek', { rows, count });
+    const { rows, count } = await buildSumData('this');
+    res.render('sumweek', { rows, count, which: 'this', title: 'สรุปการจอง — สัปดาห์นี้' });
   } catch (err) {
     console.error('GET /sumthisweek error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.get('/sumnextweek', requireRole('admin'), async (req, res) => {
+  try {
+    const { rows, count } = await buildSumData('next');
+    res.render('sumweek', { rows, count, which: 'next', title: 'สรุปการจอง — สัปดาห์หน้า' });
+  } catch (err) {
+    console.error('GET /sumnextweek error:', err);
     res.status(500).send('Server Error');
   }
 });

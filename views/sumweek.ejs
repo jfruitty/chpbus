@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %></title>
+    <link href="/css/thisweekdashboard.css" rel="stylesheet" type="text/css">
+    <style>
+        .sum-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+        .sum-head h1 { font-size: 20px; margin: 0; color: #334155; }
+        .sum-chip { background: #bfdbfe; color: #004db3; border-radius: 999px; padding: 6px 14px; font-weight: 700; font-size: 13px; }
+        .sum-hint { color: #94a3b8; font-size: 13px; }
+
+        .day-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+        .day-tab { display: flex; align-items: center; gap: 7px; background: #fff; border: 1px solid #e2e8f0;
+            border-radius: 10px; padding: 8px 14px; font-weight: 600; font-size: 14px; color: #475569; cursor: pointer; }
+        .day-tab:hover { background: #f1f5f9; }
+        .day-tab.active { background: #4a8cf7; color: #fff; border-color: #4a8cf7; box-shadow: 0 4px 12px rgba(74,140,247,.35); }
+        .day-tab .badge { background: #e2e8f0; color: #475569; border-radius: 999px; font-size: 12px; padding: 1px 8px; font-weight: 800; }
+        .day-tab.active .badge { background: rgba(255,255,255,.3); color: #fff; }
+        .day-tab.empty { opacity: .55; }
+
+        .sum-table { border-collapse: collapse; width: 100%; background: #fff; border-radius: 12px;
+            overflow: hidden; box-shadow: 0 4px 16px rgba(15,23,42,.08); }
+        .sum-table th, .sum-table td { padding: 10px 12px; text-align: center; font-size: 14px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+        .sum-table thead th { background: #f1f5f9; color: #475569; font-weight: 700; font-size: 13px; position: sticky; top: 0; }
+        .sum-table thead tr:first-child th { top: 0; }
+        .sum-table thead .grp-in { background: #eaf2ff; color: #1d4ed8; }
+        .sum-table thead .grp-out { background: #fff3e6; color: #c2410c; }
+        .sum-table td:first-child, .sum-table th:first-child { text-align: left; font-weight: 600; }
+        .sum-table tbody tr:hover { background: #f8fafc; }
+        .sum-table td.zero { color: #cbd5e1; }
+        .sum-table td.has { font-weight: 700; color: #0f172a; }
+        .sum-table td.rowtot, .sum-table th.rowtot { background: #f8fafc; font-weight: 800; color: #0f172a; }
+        .sum-table tfoot td { font-weight: 800; background: #eef2f7; border-top: 2px solid #e2e8f0; }
+        .day-empty { color: #94a3b8; padding: 28px; text-align: center; background: #fff; border-radius: 12px; box-shadow: 0 4px 16px rgba(15,23,42,.08); }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo"></div>
+                <%- include('partials/adminmenu') %>
+            </div>
+            <div class="footer">
+                <div class="company-info">
+                    <p>Resonac</p>
+                    <p>CHP</p>
+                </div>
+                <a href="/logout" style="display:block;margin-top:12px;padding:8px 12px;background:#ef4444;color:#fff;text-decoration:none;border-radius:6px;font-size:13px;text-align:center;">ออกจากระบบ</a>
+            </div>
+        </nav>
+        <main class="main-content">
+            <%
+                var days = [
+                    { key: 'monday', label: 'จันทร์' }, { key: 'tuesday', label: 'อังคาร' },
+                    { key: 'wednesday', label: 'พุธ' }, { key: 'thursday', label: 'พฤหัสบดี' },
+                    { key: 'friday', label: 'ศุกร์' }, { key: 'saturday', label: 'เสาร์' },
+                    { key: 'sunday', label: 'อาทิตย์' },
+                ];
+                // slot order: ขาเข้า (07:30, 10:30, 19:30) then ขาออก (08:15, 17:15, 20:15)
+                var slots = [
+                    ['inbound', '07:30'], ['inbound', '10:30'], ['inbound', '19:30'],
+                    ['outbound', '08:15'], ['outbound', '17:15'], ['outbound', '20:15'],
+                ];
+                function c(route, day, bound, time) {
+                    var r = count[route]; if (!r) return 0;
+                    var d = r[day]; if (!d) return 0;
+                    var b = d[bound]; if (!b) return 0;
+                    return b[time] || 0;
+                }
+                function dayTotal(day) {
+                    var t = 0;
+                    rows.forEach(function (r) { slots.forEach(function (s) { t += c(r.name, day, s[0], s[1]); }); });
+                    return t;
+                }
+                var weekTotal = days.reduce(function (a, d) { return a + dayTotal(d.key); }, 0);
+            %>
+            <div class="sum-head">
+                <h1><%= title %></h1>
+                <span class="sum-chip">รวมทั้งสัปดาห์ <%= weekTotal %> คน</span>
+                <span class="sum-hint">เลือกวันเพื่อดูจำนวนผู้โดยสารแต่ละสาย/รอบ</span>
+            </div>
+
+            <div class="day-tabs" data-which="<%= which %>">
+                <% days.forEach(function (d) { var dt = dayTotal(d.key); %>
+                <button type="button" class="day-tab<%= dt ? '' : ' empty' %>" data-day="<%= d.key %>" data-count="<%= dt %>">
+                    <%= d.label %> <span class="badge"><%= dt %></span>
+                </button>
+                <% }); %>
+            </div>
+
+            <% days.forEach(function (d) {
+                 var dayRoutes = rows.filter(function (r) {
+                     return slots.some(function (s) { return c(r.name, d.key, s[0], s[1]) > 0; });
+                 });
+                 var colTot = slots.map(function (s) {
+                     return dayRoutes.reduce(function (a, r) { return a + c(r.name, d.key, s[0], s[1]); }, 0);
+                 });
+                 var grand = colTot.reduce(function (a, b) { return a + b; }, 0);
+            %>
+            <div class="day-panel" data-day="<%= d.key %>" style="display:none">
+                <% if (!dayRoutes.length) { %>
+                <div class="day-empty">— ไม่มีการจองในวัน<%= d.label %> —</div>
+                <% } else { %>
+                <div class="table-section" style="overflow:auto">
+                    <table class="sum-table">
+                        <thead>
+                            <tr>
+                                <th rowspan="2">สายรถ</th>
+                                <th class="grp-in" colspan="3">🟦 ขาเข้าโรงงาน</th>
+                                <th class="grp-out" colspan="3">🟧 ขาออกโรงงาน</th>
+                                <th class="rowtot" rowspan="2">รวม</th>
+                            </tr>
+                            <tr>
+                                <th class="grp-in">07:30</th>
+                                <th class="grp-in">10:30</th>
+                                <th class="grp-in">19:30</th>
+                                <th class="grp-out">08:15</th>
+                                <th class="grp-out">17:15</th>
+                                <th class="grp-out">20:15</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <% dayRoutes.forEach(function (r) {
+                                 var rowTot = slots.reduce(function (a, s) { return a + c(r.name, d.key, s[0], s[1]); }, 0);
+                            %>
+                            <tr>
+                                <td><%= r.name %></td>
+                                <% slots.forEach(function (s) { var v = c(r.name, d.key, s[0], s[1]); %>
+                                <td class="<%= v ? 'has' : 'zero' %>"><%= v ? v : '·' %></td>
+                                <% }); %>
+                                <td class="rowtot"><%= rowTot %></td>
+                            </tr>
+                            <% }); %>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td>รวม</td>
+                                <% colTot.forEach(function (t) { %><td><%= t %></td><% }); %>
+                                <td class="rowtot"><%= grand %></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                <% } %>
+            </div>
+            <% }); %>
+        </main>
+    </div>
+
+    <script>
+        (function () {
+            var wrap = document.querySelector('.day-tabs');
+            var tabs = Array.prototype.slice.call(document.querySelectorAll('.day-tab'));
+            var panels = Array.prototype.slice.call(document.querySelectorAll('.day-panel'));
+            function show(day) {
+                tabs.forEach(function (t) { t.classList.toggle('active', t.dataset.day === day); });
+                panels.forEach(function (p) { p.style.display = (p.dataset.day === day) ? '' : 'none'; });
+            }
+            tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.dataset.day); }); });
+
+            // Default: this-week -> today; next-week -> Monday. If that day has no
+            // bookings, fall back to the first day that does (else keep default).
+            var keys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+            var which = wrap ? wrap.dataset.which : 'this';
+            var def = (which === 'this') ? keys[new Date().getDay()] : 'monday';
+            var defTab = tabs.filter(function (t) { return t.dataset.day === def; })[0];
+            if (!defTab || Number(defTab.dataset.count) === 0) {
+                var firstWithData = tabs.filter(function (t) { return Number(t.dataset.count) > 0; })[0];
+                if (firstWithData) def = firstWithData.dataset.day;
+            }
+            show(def);
+        })();
+    </script>
+</body>
+
+</html>
