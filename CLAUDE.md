@@ -72,6 +72,7 @@ chpbus/
 - LINE webhook: `POST /callback` ([index.js:2468](index.js#L2468)) ผ่าน middleware ตรวจลายเซ็น HMAC-SHA256 `validateSignatureMiddleware` ([index.js:2395](index.js#L2395)) — ใช้ค่า `channelSecret` constant อย่างถูกต้อง (บั๊ก `config` undefined ของเวอร์ชันเก่าถูกแก้แล้ว)
 - LIFF mini-app ยืนยันตัวตนด้วย LINE access token ผ่าน `POST /verifyaccesstoken` ([index.js:256](index.js#L256)) ตรวจ client_id เทียบกับ `LINE_CHANNEL_ID`
 - หน้า admin/HR ใช้ middleware `requireRole('admin')`
+- **หน้า `/register`** (LIFF): ถ้าลงทะเบียนแล้ว (approved/standby) จะโชว์การ์ดโปรไฟล์ + **การ์ดแก้จุดขึ้นรถของตัวเอง** (dropdown จุด group ตามสาย) — ดึงรายการจาก `GET /stopsjson` แล้ว save ผ่าน `POST /update-my-location` (ยืนยันด้วย access token, อัปเดต `employee.home_stop_id` ซึ่ง `upsertBooking` ใช้ derive route ตอนจองครั้งถัดไป). ถ้ายังไม่ลงทะเบียน → ฟอร์มสมัคร (`POST /register`)
 
 ### Schema ฐานข้อมูล (`chp.*`)
 

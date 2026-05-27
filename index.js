@@ -1207,6 +1207,44 @@ app.post('/register', async (req, res) => {
   res.render('register', { title: 'Register Form', liffid: liffIds.register });
 });
 
+// Pickup-point catalogue for LIFF pages (the /register self-service editor).
+// Same single-route stop list the admin /member page uses; not sensitive.
+app.get('/stopsjson', async (req, res) => {
+  try {
+    res.json({ stops: await chp2Store.getStops(pool) });
+  } catch (err) {
+    console.error('GET /stopsjson error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Let a registered user change their OWN pickup point from /register.
+// Authenticated by LINE access token (like the booking endpoints), so the
+// userId is taken from the verified profile — never trusted from the body.
+// Updates employee.home_stop_id, which upsertBooking reads when deriving the
+// route on the next booking.
+app.post('/update-my-location', async (req, res) => {
+  const { userAccessToken, stopId } = req.body;
+  const profileResponse = await verifyAndFetchProfile(userAccessToken, res);
+  if (!profileResponse || !profileResponse.data || !profileResponse.data.userId) return;
+  const userId = profileResponse.data.userId;
+
+  const sid = (stopId === '' || stopId == null) ? null : Number(stopId);
+  if (sid !== null && !Number.isInteger(sid)) {
+    return res.status(400).json({ error: 'Invalid stopId' });
+  }
+  try {
+    const result = await chp2Store.updateHomeStop(pool, userId, sid);
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /update-my-location error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // --- Booking next week ---
 
 app.get('/nextweek', (req, res) => {

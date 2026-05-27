@@ -39,15 +39,17 @@
                         if (data.userData.approve == 'approved') {
 
                             var status = 'ยืนยันตัวตนแล้ว';
-                           
+
                             createProfileCard(profile.pictureUrl, profile.displayName, status);
-                      
+                            createLocationEditor(accessToken, data.userData.home_stop_id, data.userData.role);
+
 
                         } else if (data.userData.approve == 'standby') {
 
                             var status = 'รอแอดมินยืนยัน';
-                     
+
                             createProfileCard(profile.pictureUrl, profile.displayName, status);
+                            createLocationEditor(accessToken, data.userData.home_stop_id, data.userData.role);
 
                         } else {
                           
@@ -259,6 +261,100 @@
             document.body.appendChild(card);
         }
 
+
+        // Self-service pickup-point editor for already-registered users.
+        // currentStopId preselects the dropdown; currentLabel is shown as the
+        // current value. Saving posts to /update-my-location (access-token auth).
+        function createLocationEditor(accessToken, currentStopId, currentLabel) {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.style.marginTop = '16px';
+
+            const title = document.createElement('h2');
+            title.textContent = 'จุดขึ้นรถของฉัน';
+            title.style.fontSize = '18px';
+            title.style.marginBottom = '12px';
+            card.appendChild(title);
+
+            const current = document.createElement('p');
+            const hasLoc = currentLabel && currentLabel !== 'no data';
+            current.innerHTML = 'ปัจจุบัน: <b>' + (hasLoc ? currentLabel : 'ยังไม่ได้ระบุ') + '</b>';
+            card.appendChild(current);
+
+            const label = document.createElement('label');
+            label.textContent = 'เลือกจุดขึ้นรถใหม่';
+            label.setAttribute('for', 'mystop');
+            card.appendChild(label);
+
+            const select = document.createElement('select');
+            select.id = 'mystop';
+            const ph = document.createElement('option');
+            ph.value = '';
+            ph.textContent = '— เลือกจุดขึ้นรถ —';
+            select.appendChild(ph);
+            card.appendChild(select);
+
+            const saveBtn = document.createElement('button');
+            saveBtn.type = 'button';
+            saveBtn.textContent = 'บันทึกจุดขึ้นรถ';
+            card.appendChild(saveBtn);
+
+            const msg = document.createElement('p');
+            msg.style.textAlign = 'center';
+            msg.style.margin = '8px 0 0';
+            card.appendChild(msg);
+
+            document.body.appendChild(card);
+
+            // Populate from the live stop catalogue, grouped by route.
+            fetch('/stopsjson')
+                .then(r => r.json())
+                .then(d => {
+                    const stops = d.stops || [];
+                    const groups = {};
+                    stops.forEach(s => { (groups[s.route_name] = groups[s.route_name] || []).push(s); });
+                    Object.keys(groups).forEach(routeName => {
+                        const og = document.createElement('optgroup');
+                        og.label = routeName;
+                        groups[routeName].forEach(s => {
+                            const opt = document.createElement('option');
+                            opt.value = s.id;
+                            opt.textContent = s.label;
+                            og.appendChild(opt);
+                        });
+                        select.appendChild(og);
+                    });
+                    if (currentStopId) select.value = String(currentStopId);
+                })
+                .catch(err => console.error('load stops failed', err));
+
+            saveBtn.addEventListener('click', function () {
+                const stopId = select.value;
+                if (!stopId) { msg.style.color = '#f00'; msg.textContent = 'กรุณาเลือกจุดขึ้นรถ'; return; }
+                saveBtn.disabled = true;
+                msg.style.color = '#333';
+                msg.textContent = 'กำลังบันทึก...';
+                fetch('/update-my-location', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userAccessToken: accessToken, stopId: stopId })
+                })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (res.ok) {
+                            const chosen = select.options[select.selectedIndex].textContent;
+                            current.innerHTML = 'ปัจจุบัน: <b>' + chosen + '</b>';
+                            msg.style.color = '#2e7d32';
+                            msg.textContent = 'บันทึกแล้ว ✓';
+                        } else {
+                            msg.style.color = '#f00';
+                            msg.textContent = 'ผิดพลาด: ' + (res.error || 'ไม่สำเร็จ');
+                        }
+                    })
+                    .catch(() => { msg.style.color = '#f00'; msg.textContent = 'เกิดข้อผิดพลาดในการบันทึก'; })
+                    .finally(() => { saveBtn.disabled = false; });
+            });
+        }
 
 
         function submitFormAsync() {

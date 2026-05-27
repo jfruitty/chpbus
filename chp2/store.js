@@ -21,14 +21,16 @@ function rebuildLocation(seq, routeName, stopName) {
 async function getUserData(db, lineUserId) {
   const { rows } = await db.query(
     `SELECT e.per_id, e.line_user_id, e.display_name, e.first_name, e.last_name,
-            e.department, e.approval_status, rs.seq, rs.name AS stop_name, r.name AS route_name
+            e.department, e.approval_status, e.home_stop_id,
+            rs.seq, rs.name AS stop_name, r.name AS route_name
      FROM chp2.employee e
      LEFT JOIN chp2.route_stop rs ON rs.id = e.home_stop_id
      LEFT JOIN chp2.route r       ON r.id = rs.route_id
      WHERE e.line_user_id = $1`, [lineUserId]);
   if (rows.length === 0) {
     return { status: 'success', approve: 'notmatch', pernumber: 'no data', userid: 'no data',
-      displayname: 'no data', name: 'no data', surname: 'no data', department: 'no data', role: 'no data' };
+      displayname: 'no data', name: 'no data', surname: 'no data', department: 'no data', role: 'no data',
+      home_stop_id: null };
   }
   const r = rows[0];
   return {
@@ -37,6 +39,7 @@ async function getUserData(db, lineUserId) {
     pernumber: r.per_id, userid: r.line_user_id, displayname: r.display_name,
     name: r.first_name, surname: r.last_name, department: r.department,
     role: rebuildLocation(r.seq, r.route_name, r.stop_name),
+    home_stop_id: r.home_stop_id,
   };
 }
 
