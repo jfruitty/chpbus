@@ -774,6 +774,22 @@ app.get('/sumthisweek', requireRole('admin'), async (req, res) => {
   }
 });
 
+// Route catalogue for the driver/seatdriver insert+edit modals (chp2.route).
+// Returns { routes: [{ code, name, pack_group }] } so the client can group
+// single vs combined ("รวม…") routes in <optgroup>s. Replaces the stale
+// hard-coded <option> lists that used the old chp route names.
+app.get('/routenamesjson', requireRole('admin', 'driver'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT code, name, pack_group FROM chp2.route ORDER BY pack_group, code'
+    );
+    res.json({ routes: result.rows });
+  } catch (err) {
+    console.error('GET /routenamesjson error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
 // --- Bus management: bustoday (HR) reuses the chp.driver insert/edit helpers ---
 app.get('/bustoday', requireRole('admin'), async (req, res) => {
   try {

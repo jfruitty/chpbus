@@ -22,6 +22,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Provided by /js/picker.js.
   await loadDriverPicker('/driverusersjson', ['name', 'insertname']);
 
+  // Populate the route dropdowns from the live chp2 route catalogue
+  // (single + combined routes), replacing the old hard-coded options.
+  await loadRoutePicker('/routenamesjson', ['route', 'editroute']);
+
+  // Close-button / backdrop / Escape dismissal for all modals on the page.
+  enableModalDismiss();
+
   await createtable();
 
   let rows = tableBody.querySelectorAll('tr');
@@ -237,7 +244,7 @@ async function createtable() {
       <td>${row.time}</td>
       <td>${row.number}</td>
       <td>${row.pax}</td>
-      <td class="edit-btn" data-userid="${row.id}">✏️</td>
+      <td class="edit-btn" data-userid="${row.id}" data-route="${row.route || ''}">✏️</td>
       <td class="delete-btn" data-userid="${row.id}">🗑️</td>
     `;
 
@@ -321,6 +328,11 @@ async function createtable() {
       editformmodal.style.display = 'block';
 
       id = button.dataset.userid;
+
+      // Prefill the route dropdown with this row's current route so HR
+      // sees what it is set to (and can leave it unchanged). COALESCE on
+      // the server keeps the driver name if the picker is left blank.
+      selectRouteValue('editroute', 'editotherroute', 'edit-other-route-row', button.dataset.route);
 
     });
   });

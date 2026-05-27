@@ -106,30 +106,17 @@
                             <div class="row">
                                 <label for="editroute">สายรถ:</label>
                                 <select id="editroute" name="editroute">
-                                    <option value="วัดสว่าง">วัดสว่าง</option>
-                                    <option value="แคราย">แคราย</option>
-                                    <option value="คลอง14">คลอง14</option>
-                                    <option value="คลอง 14 (เสริม)">คลอง 14 (เสริม)</option>
-                                    <option value="หมู่บ้านริมบึง">หมู่บ้านริมบึง</option>
-                                    <option value="คลองเจ้า">คลองเจ้า</option>
-                                    <option value="หนามแดง">หนามแดง</option>
-                                    <option value="ประเวศ">ประเวศ</option>
-                                    <option value="แปดริ้ว">แปดริ้ว</option>
-                                    <option value="วัดเกาะ">วัดเกาะ</option>
-                                    <option value="แปลงยาว">แปลงยาว</option>
-                                    <option value="ลาดบัวขาว รถบัส">ลาดบัวขาว รถบัส</option>
-                                    <option value="ดงน้อย">ดงน้อย</option>
-                                    <option value="สนามชัย">สนามชัย</option>
-                                    <option value="กรุงเทพ">กรุงเทพ</option>
-                                    <option value="บางน้ำเปรี้ยว">บางน้ำเปรี้ยว</option>
-                                    <option value="อื่นๆ">อื่นๆ</option>
+                                    <option value="">เลือกสายรถ</option>
                                 </select>
                             </div>
                             <div class="row" id="edit-other-route-row" style="display: none;">
-                                <label for="editotherroute">-</label>
-                                <input type="text" id="editotherroute" name="editotherroute" style="width: 43%;">
+                                <label for="editotherroute">สายรถ (พิมพ์เอง):</label>
+                                <input type="text" id="editotherroute" name="editotherroute" placeholder="ระบุชื่อสาย">
                             </div>
-                            <button type="submit">Submit</button>
+                            <div class="modal-actions">
+                                <button type="button" class="btn-secondary" data-close-modal>ยกเลิก</button>
+                                <button type="submit">บันทึก</button>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -149,28 +136,12 @@
                             <div class="row">
                                 <label for="route">สายรถ:</label>
                                 <select id="route" name="route">
-                                    <option value="วัดสว่าง">วัดสว่าง</option>
-                                    <option value="แคราย">แคราย</option>
-                                    <option value="คลอง14">คลอง14</option>
-                                    <option value="คลอง 14 (เสริม)">คลอง 14 (เสริม)</option>
-                                    <option value="หมู่บ้านริมบึง">หมู่บ้านริมบึง</option>
-                                    <option value="คลองเจ้า">คลองเจ้า</option>
-                                    <option value="หนามแดง">หนามแดง</option>
-                                    <option value="ประเวศ">ประเวศ</option>
-                                    <option value="แปดริ้ว">แปดริ้ว</option>
-                                    <option value="วัดเกาะ">วัดเกาะ</option>
-                                    <option value="แปลงยาว">แปลงยาว</option>
-                                    <option value="ลาดบัวขาว รถบัส">ลาดบัวขาว รถบัส</option>
-                                    <option value="ดงน้อย">ดงน้อย</option>
-                                    <option value="สนามชัย">สนามชัย</option>
-                                    <option value="กรุงเทพ">กรุงเทพ</option>
-                                    <option value="บางน้ำเปรี้ยว">บางน้ำเปรี้ยว</option>
-                                    <option value="อื่นๆ">อื่นๆ</option>
+                                    <option value="">เลือกสายรถ</option>
                                 </select>
                             </div>
                             <div class="row" id="other-route-row" style="display: none;">
-                                <label for="otherroute">-</label>
-                                <input type="text" id="otherroute" name="otherroute" style="width: 43%;">
+                                <label for="otherroute">สายรถ (พิมพ์เอง):</label>
+                                <input type="text" id="otherroute" name="otherroute" placeholder="ระบุชื่อสาย">
                             </div>
                             <div class="row">
                                 <label for="day">วัน:</label>
@@ -205,9 +176,12 @@
                             </div>
                             <div class="row">
                                 <label for="bus_number">คันที่:</label>
-                                <input type="number" id="bus_number" name="bus_number" style="width: 43%;">
+                                <input type="number" id="bus_number" name="bus_number" min="1">
                             </div>
-                            <button type="submit">Submit</button>
+                            <div class="modal-actions">
+                                <button type="button" class="btn-secondary" data-close-modal>ยกเลิก</button>
+                                <button type="submit">บันทึก</button>
+                            </div>
                         </form>
                     </div>
                 </div>

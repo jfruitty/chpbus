@@ -145,3 +145,119 @@ async function loadPassengerPicker(url, selectId) {
     console.error('loadPassengerPicker failed for', url, error);
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Route picker (/routenamesjson) — shared by /driver and /seatdriver.
+ *
+ * Replaces the hard-coded <option> lists (old chp route names) with the live
+ * chp2.route catalogue. Single routes and combined ("รวม…") routes are split
+ * into two <optgroup>s, and a trailing "อื่นๆ" option is kept so HR can still
+ * type a one-off route by hand (the page JS shows the free-text row when it
+ * is selected).
+ * ------------------------------------------------------------------------- */
+
+const ROUTE_OTHER = 'อื่นๆ';
+
+async function loadRoutePicker(url, selectIds) {
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+    const routes = data.routes || [];
+    const isCombined = (r) => /^\s*รวม/.test(r.name) || (r.code || '').includes('+');
+    const singles = routes.filter((r) => !isCombined(r));
+    const combos = routes.filter(isCombined);
+
+    selectIds.forEach((sid) => {
+      const select = document.getElementById(sid);
+      if (!select) return;
+      select.innerHTML = '';
+
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'เลือกสายรถ';
+      select.appendChild(placeholder);
+
+      const addGroup = (label, list) => {
+        if (!list.length) return;
+        const og = document.createElement('optgroup');
+        og.label = label;
+        list.forEach((r) => {
+          const opt = document.createElement('option');
+          opt.value = r.name;
+          opt.textContent = r.name;
+          og.appendChild(opt);
+        });
+        select.appendChild(og);
+      };
+      addGroup('สายเดี่ยว', singles);
+      addGroup('สายรวม', combos);
+
+      const other = document.createElement('option');
+      other.value = ROUTE_OTHER;
+      other.textContent = 'อื่นๆ (พิมพ์เอง)';
+      select.appendChild(other);
+    });
+  } catch (error) {
+    console.error('loadRoutePicker failed for', url, error);
+  }
+}
+
+/**
+ * Pre-select a route in an edit modal. If `value` matches one of the
+ * dropdown options it is selected and the free-text row is hidden; otherwise
+ * the dropdown falls back to "อื่นๆ", the free-text row is shown and the
+ * input is filled with the original value.
+ *
+ * @param {string} selectId    route <select> id (e.g. 'editroute')
+ * @param {string} otherInputId free-text <input> id (e.g. 'editotherroute')
+ * @param {string} otherRowId   wrapper row id to toggle (e.g. 'edit-other-route-row')
+ * @param {string} value        the row's current route name
+ */
+function selectRouteValue(selectId, otherInputId, otherRowId, value) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+  const v = value || '';
+  const match = Array.from(select.options).some((o) => o.value === v && o.value !== '');
+  const otherRow = document.getElementById(otherRowId);
+  const otherInput = document.getElementById(otherInputId);
+
+  if (match) {
+    select.value = v;
+    if (otherRow) otherRow.style.display = 'none';
+    if (otherInput) otherInput.value = '';
+  } else if (v) {
+    select.value = ROUTE_OTHER;
+    if (otherRow) otherRow.style.display = 'flex';
+    if (otherInput) otherInput.value = v;
+  } else {
+    select.value = '';
+    if (otherRow) otherRow.style.display = 'none';
+  }
+}
+
+/**
+ * Wire up generic "dismiss" behaviour for the .modal dialogs on a page:
+ *   - clicking any element carrying [data-close-modal] closes its modal,
+ *   - clicking the dark backdrop (the .modal itself) closes it,
+ *   - pressing Escape closes whichever modal is open.
+ * Safe to call once per page; it only attaches document-level listeners.
+ */
+function enableModalDismiss() {
+  document.addEventListener('click', (e) => {
+    const closer = e.target.closest && e.target.closest('[data-close-modal]');
+    if (closer) {
+      const m = closer.closest('.modal');
+      if (m) m.style.display = 'none';
+      return;
+    }
+    if (e.target.classList && e.target.classList.contains('modal')) {
+      e.target.style.display = 'none';
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    document.querySelectorAll('.modal').forEach((m) => {
+      if (m.style.display === 'block') m.style.display = 'none';
+    });
+  });
+}

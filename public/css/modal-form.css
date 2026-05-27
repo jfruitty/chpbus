@@ -25,30 +25,88 @@
  * these pages can opt in just by adding the class.
  */
 
+/* ---- backdrop ---- */
+
+/*
+ * The .modal base (driver.css) already paints the dark backdrop and toggles
+ * display:none/block. We layer a soft blur + fade so opening feels smooth.
+ * The animation replays every time the dialog flips back to display:block.
+ */
+.modal-pretty {
+  backdrop-filter: blur(2px);
+  animation: modalFadeIn 0.18s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes modalSlideUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* ---- the card itself ---- */
 
 .modal-pretty .modal-content {
+  position: relative;
   background: #fff;
   margin: 6% auto;
-  padding: 28px 32px;
+  padding: 26px 30px 30px;
   border: none;
-  border-radius: 14px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
   width: 90%;
   max-width: 460px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Sarabun",
+    Roboto, "Helvetica Neue", sans-serif;
+  animation: modalSlideUp 0.22s ease-out;
 }
 
 .modal-pretty .modal-content h2 {
   margin: 0 0 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #eef0f3;
   font-size: 18px;
+  font-weight: 700;
   color: #1f2937;
 }
 
+/* X button, parked in the top-right corner of the card */
 .modal-pretty .modal-content .close {
-  font-size: 26px;
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  float: none;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 22px;
+  line-height: 1;
   color: #9ca3af;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.modal-pretty .modal-content .close:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+/* group headers inside the route dropdown (สายเดี่ยว / สายรวม) */
+.form-modal .row optgroup {
+  font-size: 12px;
+  font-weight: 700;
+  color: #6b7280;
+}
+
+.form-modal .row optgroup option {
+  font-weight: 400;
+  color: #1f2937;
 }
 
 /* ---- form rows ---- */
@@ -124,4 +182,33 @@
 
 .form-modal button[type="submit"]:hover {
   background: #1d4ed8;
+}
+
+/* ---- action row (Cancel + Submit side by side) ---- */
+
+.form-modal .modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+/* When inside the action row, both buttons share the width evenly. */
+.form-modal .modal-actions button {
+  flex: 1;
+  margin-top: 0;
+}
+
+.form-modal .btn-secondary {
+  padding: 11px;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.form-modal .btn-secondary:hover {
+  background: #e2e8f0;
 }

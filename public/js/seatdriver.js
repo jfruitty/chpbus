@@ -21,6 +21,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Provided by /js/picker.js.
   await loadPassengerPicker('/passengerusersjson', 'perid');
 
+  // Populate the route dropdowns from the live chp2 route catalogue
+  // (single + combined routes), replacing the old hard-coded options.
+  await loadRoutePicker('/routenamesjson', ['route', 'editroute']);
+
+  // Close-button / backdrop / Escape dismissal for all modals on the page.
+  enableModalDismiss();
+
   await createtable();
 
   let rows = tableBody.querySelectorAll('tr');
@@ -188,7 +195,7 @@ async function createtable() {
       <td>${row.time}</td>
       <td>${row.busnumber}</td>
       <td>${row.seat}</td>
-      <td class="edit-btn" data-userid="${row.id}">✏️</td>
+      <td class="edit-btn" data-userid="${row.id}" data-route="${row.route || ''}" data-bus="${row.busnumber || ''}" data-seat="${row.seat || ''}">✏️</td>
       <td class="delete-btn" data-userid="${row.id}">🗑️</td>
     `;
 
@@ -280,6 +287,13 @@ async function createtable() {
       editformmodal.style.display = 'block';
 
       id = button.dataset.userid;
+
+      // Prefill the edit form with the row's current values. This matters
+      // for คันที่/ที่นั่ง because /editpaxdriver overwrites them outright
+      // (no COALESCE) — leaving them blank would wipe the seat to NaN.
+      selectRouteValue('editroute', 'editotherroute', 'edit-other-route-row', button.dataset.route);
+      document.getElementById('editbus_number').value = button.dataset.bus || '';
+      document.getElementById('editseat_number').value = button.dataset.seat || '';
 
     });
   });

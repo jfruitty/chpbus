@@ -1,3 +1,4 @@
+
 # CLAUDE.md
 
 ไฟล์นี้เป็นคู่มือให้ Claude Code (claude.ai/code) ใช้ทำงานกับโค้ดใน repo นี้
@@ -143,6 +144,8 @@ chpbus/
 EJS templates อยู่ใน [views/](views/), static อยู่ใน [public/](public/) (mount ที่ `/static` ด้วย) มี 2 รูปแบบ:
 - **server-rendered** (วน `rows` ใน EJS): `member`, `thisweekdashboard`, `nextweekdashboard`, `sumthisweek`, `supervisor`, `hrnextweek`, `busfromhr`, `seatfromhr`
 - **client-rendered** (`<tbody>` ว่าง, JS fetch endpoint `*json` มา build เอง): `driver`, `seatdriver`, `bustoday`, `seattoday`, `changelog` และ LIFF app (`register`, `nextweek`, `thisweek`) — contract ของ field อยู่ใน `public/js/*.js` ไม่ใช่ใน template
+
+**Modal เพิ่ม/แก้รถ + ผู้โดยสาร (`driver`/`seatdriver`):** dropdown สายรถ**ไม่ฮาร์ดโค้ดแล้ว** — โหลดจาก `GET /routenamesjson` (chp2.route, แยก optgroup สายเดี่ยว/สายรวม + ตัวเลือก "อื่นๆ" พิมพ์เอง) ผ่าน `loadRoutePicker()` ใน [public/js/picker.js](public/js/picker.js); helper เดียวกันมี `selectRouteValue()` (prefill สายตอน edit) และ `enableModalDismiss()` (ปิดด้วยปุ่ม ✕ / คลิกฉากหลัง / Escape) สไตล์ modal อยู่ใน [public/css/modal-form.css](public/css/modal-form.css). ⚠️ `/editpaxdriver` (แก้ผู้โดยสาร) **ไม่ใช้ COALESCE** (`SET busnumber=$3, seat=$4` ด้วย `parseInt`) — ฟอร์ม edit จึงต้อง prefill คันที่/ที่นั่งเดิมไว้เสมอ ไม่งั้น submit แล้วค่าจะกลายเป็น NaN
 
 template ที่ไม่ถูกใช้/พัง (ข้ามได้): `index.ejs`, `hr.ejs`, `newbookingpage.ejs`, `driverplan.ejs`, `oldnextweek.ejs`, `oldthisweek.ejs`, `drivercheck.ejs`; และ `GET /detail` ([index.js:1442](index.js#L1442)) เรียก `res.render('detail')` ทั้งที่ไฟล์ `detail.ejs` **ไม่มีอยู่จริง** (route นี้พัง)
 
