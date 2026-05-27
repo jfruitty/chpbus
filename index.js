@@ -943,7 +943,12 @@ app.get('/seatdriver', requireRole('admin', 'driver'), async (req, res) => {
       SELECT id, userid, perid, first_name, last_name, route, location,
              day, bound, "time", busnumber, seat
       FROM chp.seatdriver
-    `);
+      ORDER BY route,
+               CASE day WHEN 'จันทร์' THEN 1 WHEN 'อังคาร' THEN 2 WHEN 'พุธ' THEN 3
+                        WHEN 'พฤหัส' THEN 4 WHEN 'ศุกร์' THEN 5 WHEN 'เสาร์' THEN 6
+                        WHEN 'อาทิตย์' THEN 7 ELSE 8 END,
+               "time", bound, busnumber, seat
+`);
     res.render('seatdriver', { rows: result.rows });
   } catch (err) {
     console.error('GET /seatdriver error:', err);
@@ -957,7 +962,12 @@ app.get('/seatdriverjson', requireRole('admin', 'driver'), async (req, res) => {
       SELECT id, userid, perid, first_name, last_name, route, location,
              day, bound, "time", busnumber, seat
       FROM chp.seatdriver
-    `);
+      ORDER BY route,
+               CASE day WHEN 'จันทร์' THEN 1 WHEN 'อังคาร' THEN 2 WHEN 'พุธ' THEN 3
+                        WHEN 'พฤหัส' THEN 4 WHEN 'ศุกร์' THEN 5 WHEN 'เสาร์' THEN 6
+                        WHEN 'อาทิตย์' THEN 7 ELSE 8 END,
+               "time", bound, busnumber, seat
+`);
     res.json({ rows: result.rows });
   } catch (err) {
     console.error('GET /seatdriverjson error:', err);
