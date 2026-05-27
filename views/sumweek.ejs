@@ -35,6 +35,12 @@
         .sum-table td.rowtot, .sum-table th.rowtot { background: #f8fafc; font-weight: 800; color: #0f172a; }
         .sum-table tfoot td { font-weight: 800; background: #eef2f7; border-top: 2px solid #e2e8f0; }
         .day-empty { color: #94a3b8; padding: 28px; text-align: center; background: #fff; border-radius: 12px; box-shadow: 0 4px 16px rgba(15,23,42,.08); }
+
+        /* the shared .main-content is overflow:hidden (built for a single
+           flex:1 table); this page stacks header + tabs + table, so let the
+           whole panel scroll vertically and the table scroll horizontally. */
+        .sum-main { overflow-y: auto; }
+        .sum-tablewrap { overflow-x: auto; padding-bottom: 24px; }
     </style>
 </head>
 
@@ -53,7 +59,7 @@
                 <a href="/logout" style="display:block;margin-top:12px;padding:8px 12px;background:#ef4444;color:#fff;text-decoration:none;border-radius:6px;font-size:13px;text-align:center;">ออกจากระบบ</a>
             </div>
         </nav>
-        <main class="main-content">
+        <main class="main-content sum-main">
             <%
                 var days = [
                     { key: 'monday', label: 'จันทร์' }, { key: 'tuesday', label: 'อังคาร' },
@@ -106,7 +112,7 @@
                 <% if (!dayRoutes.length) { %>
                 <div class="day-empty">— ไม่มีการจองในวัน<%= d.label %> —</div>
                 <% } else { %>
-                <div class="table-section" style="overflow:auto">
+                <div class="sum-tablewrap">
                     <table class="sum-table">
                         <thead>
                             <tr>
