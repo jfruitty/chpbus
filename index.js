@@ -216,6 +216,15 @@ async function sendPushMessage(userIds, msg) {
   }
 }
 
+// Send many per-recipient push messages with limited concurrency. LINE push is
+// one recipient per call and each passenger's text differs (so multicast can't
+// be used). sendPushMessage swallows its own errors, so this never throws.
+async function chpPushBatch(items, size = 20) {
+  for (let i = 0; i < items.length; i += size) {
+    await Promise.all(items.slice(i, i + size).map(it => sendPushMessage([it.to], it.text)));
+  }
+}
+
 // --- LIFF access-token verification ---
 async function verifyAndFetchProfile(userAccessToken, res) {
   if (!userAccessToken) {
@@ -1143,6 +1152,15 @@ app.post('/sendmsgtodriver', requireRole('admin'), async (req, res) => {
       await sendPushMessage([bus.driver_user_id],
         `คุณ ${bus.first_name} ${bus.last_name} \nทะเบียน ${bus.per_id} \nสาย ${bus.route} (คันที่ ${bus.bus_number}) \nวัน ${dayTH[bus.day]} ${boundTH[bus.bound]} เวลา ${bus.time} \n\n${text}`);
     }
+
+    // Notify each passenger of their bus/seat (mirrors the old sendlinetopax()).
+    const paxItems = seattoday.filter(s => s.userid).map(s => {
+      const d = dayTH[s.day] || s.day;
+      const b = { 'ขาเข้า': 'ขาเข้าโรงงาน', 'ขาออก': 'ขาออกโรงงาน', inbound: 'ขาเข้าโรงงาน', outbound: 'ขาออกโรงงาน' }[s.bound] || s.bound;
+      return { to: s.userid, text:
+        `รายละเอียดรถของ\nคุณ ${s.first_name} ${s.last_name}\nรหัส ${s.perid}\nประจำวันนี้คือ สาย ${s.route}\n(คันที่ ${s.busnumber} ที่นั่งหมายเลข ${s.seat})\nวัน ${d} ${b} เวลา ${s.time} ครับ` };
+    });
+    await chpPushBatch(paxItems);
 
     await chpTransferBustodayToBusfromhr();
     await chpTransferSeattodayToSeatfromhr();
