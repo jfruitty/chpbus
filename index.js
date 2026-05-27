@@ -2117,7 +2117,7 @@ async function chpPack(day, kind, group) {
         }
 
         pax = pax + 1;
-        const busSize = route === 'ลาดบัวขาว รถบัส' ? 43 : 13;
+        const busSize = route === 'ลาดบัวขาว รถบัส' ? 42 : 13;
         let seat = pax % busSize;
         if (seat === 0) seat = busSize;
         const busnumber = Math.ceil(pax / busSize);
