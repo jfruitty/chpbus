@@ -131,7 +131,7 @@ function apprToEnum(v) {
 async function getMembers(db) {
   const { rows } = await db.query(
     `SELECT e.line_user_id, e.per_id, e.display_name, e.first_name, e.last_name,
-            e.department, e.factory, e.approval_status,
+            e.department, e.factory, e.approval_status, e.home_stop_id,
             rs.seq, rs.name AS stop_name, r.name AS route_name
      FROM chp2.employee e
      LEFT JOIN chp2.route_stop rs ON rs.id = e.home_stop_id
@@ -140,9 +140,31 @@ async function getMembers(db) {
   return rows.map(r => ({
     userid: r.line_user_id, perid: r.per_id, displayname: r.display_name,
     first_name: r.first_name, last_name: r.last_name, department: r.department,
-    factory: r.factory, location: rebuildLocation(r.seq, r.route_name, r.stop_name),
+    factory: r.factory, home_stop_id: r.home_stop_id,
+    location: rebuildLocation(r.seq, r.route_name, r.stop_name),
     approvalstatus: APPR_TO_DISPLAY[r.approval_status] || r.approval_status,
   }));
+}
+
+// รายการจุดขึ้นรถทั้งหมด (เฉพาะสายเดี่ยว) สำหรับ dropdown แก้ไขใน /member
+// คืน { id, route_code, route_name, label('[NN]สาย ชื่อจุด') } เรียงตามสาย+ลำดับจุด
+async function getStops(db) {
+  const { rows } = await db.query(
+    `SELECT rs.id, rs.seq, rs.name AS stop_name, r.code AS route_code, r.name AS route_name
+     FROM chp2.route_stop rs
+     JOIN chp2.route r ON r.id = rs.route_id
+     WHERE r.is_combined = false
+     ORDER BY r.pack_group, r.code, rs.seq`);
+  return rows.map(r => ({
+    id: r.id, route_code: r.route_code, route_name: r.route_name,
+    label: rebuildLocation(r.seq, r.route_name, r.stop_name),
+  }));
+}
+
+// /update-user-location : ผูกจุดขึ้นรถ (home_stop_id) ของพนักงาน; stopId=null เพื่อล้าง
+async function updateHomeStop(db, lineUserId, stopId) {
+  return db.query(`UPDATE chp2.employee SET home_stop_id=$1, updated_at=now() WHERE line_user_id=$2`,
+    [stopId, lineUserId]);
 }
 
 async function updateApprovalStatus(db, lineUserId, status) {
@@ -263,7 +285,7 @@ async function getBookingApprove(db, which, lineUserId) {
 
 module.exports = {
   getUserData, getBookingGrid, rebuildLocation, DAY_KEY, WEEK_OFFSET, apprToEnum,
-  getMembers, updateApprovalStatus, updateDepartment, getDrivers, getPassengers, getDepartments, registerUser,
+  getMembers, getStops, updateHomeStop, updateApprovalStatus, updateDepartment, getDrivers, getPassengers, getDepartments, registerUser,
   upsertBooking, getDashboard, getRouteNames, updateThisweekApproval,
   getUserWeekData, approveByPerids, getBookingApprove,
 };

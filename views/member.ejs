@@ -75,7 +75,6 @@
               <th>ชื่อ</th>
               <th>นามสกุล</th>
               <th>แผนก</th>
-              <th>โรงงาน</th>
               <th>จุดขึ้นรถ</th>
               <th>Status</th>
             </tr>
@@ -111,10 +110,19 @@
                   </select>
                 </td>
                 <td>
-                  <%= row.factory %>
-                </td>
-                <td>
-                  <%= row.location %>
+                  <select class="user-location">
+                    <option value="">- ไม่ระบุ -</option>
+                    <% let _lastRoute = null; %>
+                    <% (stops || []).forEach(function (s) { %>
+                      <% if (s.route_code !== _lastRoute) { %>
+                        <% if (_lastRoute !== null) { %></optgroup><% } %>
+                        <optgroup label="<%= s.route_code %> — <%= s.route_name %>">
+                        <% _lastRoute = s.route_code; %>
+                      <% } %>
+                      <option value="<%= s.id %>" <%= String(row.home_stop_id) === String(s.id) ? 'selected' : '' %>><%= s.label %></option>
+                    <% }) %>
+                    <% if (_lastRoute !== null) { %></optgroup><% } %>
+                  </select>
                 </td>
                 <td>
                   <select class="approval-status <%= row.approvalstatus %>">

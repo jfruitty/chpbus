@@ -132,6 +132,30 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('Error:', error);
       }
     }
+
+    if (event.target.classList.contains('user-location')) {
+      const select = event.target;
+      const stopId = select.value;
+      const userId = select.closest('tr').dataset.userid;
+
+      try {
+        const response = await fetch(`/update-user-location`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ userId, stopId }),
+        });
+
+        if (response.ok) {
+          console.log('User location updated successfully');
+        } else {
+          console.error('Failed to update user location');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+      }
+    }
   });
 
   var approvalStatusSelects = document.querySelectorAll('select.approval-status');

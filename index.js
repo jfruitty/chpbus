@@ -513,7 +513,8 @@ app.get('/member', requireRole('admin'), async (req, res) => {
   try {
     const rows = await chp2Store.getMembers(pool);          // chp2 (รูปแบบ chp.users)
     const departments = await getChpDepartments();
-    res.render('member', { rows, departments });
+    const stops = await chp2Store.getStops(pool);           // chp2 (ตัวเลือกจุดขึ้นรถ)
+    res.render('member', { rows, departments, stops });
   } catch (err) {
     console.error('GET /member error:', err);
     res.status(500).send('Server Error');
@@ -541,6 +542,20 @@ app.post('/update-user-department', requireRole('admin'), async (req, res) => {
     res.status(200).send('User department updated successfully');
   } catch (error) {
     console.error('Error updating user department:', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+app.post('/update-user-location', requireRole('admin'), async (req, res) => {
+  const { userId, stopId } = req.body;
+  if (!userId) return res.status(400).send('Invalid userId');
+  const sid = (stopId === '' || stopId == null) ? null : Number(stopId);
+  if (sid !== null && !Number.isInteger(sid)) return res.status(400).send('Invalid stopId');
+  try {
+    await chp2Store.updateHomeStop(pool, userId, sid);   // chp2 (ผูก home_stop_id)
+    res.status(200).send('User location updated successfully');
+  } catch (error) {
+    console.error('Error updating user location:', error);
     res.status(500).send('Internal Server Error');
   }
 });
