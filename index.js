@@ -11,6 +11,9 @@ const ExcelJS = require('exceljs');
 const cron = require('node-cron');
 require('dotenv').config();
 
+// chp2 adapter layer (อ่าน/เขียน schema chp2 คืนรูปแบบเดิม) — ใช้ระหว่าง cutover
+const chp2Store = require('./chp2/store');
+
 const app = express();
 
 // --- Postgres pool ---
@@ -535,15 +538,9 @@ app.get('/logout', (req, res) => {
 // and department edits via the two POST endpoints below.
 app.get('/member', requireRole('admin'), async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT *
-      FROM chp.users
-      ORDER BY
-        CASE WHEN approvalstatus = 'pending' THEN 0 ELSE 1 END,
-        location
-    `);
+    const rows = await chp2Store.getMembers(pool);          // chp2 (รูปแบบ chp.users)
     const departments = await getChpDepartments();
-    res.render('member', { rows: result.rows, departments });
+    res.render('member', { rows, departments });
   } catch (err) {
     console.error('GET /member error:', err);
     res.status(500).send('Server Error');
@@ -553,7 +550,7 @@ app.get('/member', requireRole('admin'), async (req, res) => {
 app.post('/update-approval-status', requireRole('admin'), async (req, res) => {
   const { userId, status } = req.body;
   try {
-    await pool.query('UPDATE chp.users SET approvalstatus = $1 WHERE userid = $2', [status, userId]);
+    await chp2Store.updateApprovalStatus(pool, userId, status);
     res.status(200).send('Approval status updated successfully');
   } catch (error) {
     console.error('Error updating approval status:', error);
@@ -567,7 +564,7 @@ app.post('/update-user-department', requireRole('admin'), async (req, res) => {
     return res.status(400).send('Invalid userId or department');
   }
   try {
-    await pool.query('UPDATE chp.users SET department = $1 WHERE userid = $2', [department, userId]);
+    await chp2Store.updateDepartment(pool, userId, department);
     res.status(200).send('User department updated successfully');
   } catch (error) {
     console.error('Error updating user department:', error);
@@ -619,13 +616,7 @@ app.get('/driverjson', requireRole('admin', 'driver'), async (req, res) => {
 
 app.get('/driverusersjson', requireRole('admin', 'driver'), async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT userid, perid, first_name, last_name
-      FROM chp.users
-      WHERE department = 'Driver'
-      ORDER BY first_name, last_name
-    `);
-    res.json({ rows: result.rows });
+    res.json({ rows: await chp2Store.getDrivers(pool) });
   } catch (err) {
     console.error('GET /driverusersjson error:', err);
     res.status(500).json({ error: 'Internal Server Error' });
@@ -714,13 +705,7 @@ app.post('/removebusdriver', requireRole('admin', 'driver'), async (req, res) =>
 // Passenger picker source for seatdriver.js (everyone who is not a driver).
 app.get('/passengerusersjson', requireRole('admin', 'driver'), async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT userid, perid, first_name, last_name
-      FROM chp.users
-      WHERE department NOT IN ('Driver', 'Old Driver') OR department IS NULL
-      ORDER BY first_name, last_name
-    `);
-    res.json({ rows: result.rows });
+    res.json({ rows: await chp2Store.getPassengers(pool) });
   } catch (err) {
     console.error('GET /passengerusersjson error:', err);
     res.status(500).json({ error: 'Internal Server Error' });
@@ -737,12 +722,7 @@ app.get('/passengerusersjson', requireRole('admin', 'driver'), async (req, res) 
 // Drives the department filter dropdown on the booking dashboards
 // (replaces the old hardcoded list).
 async function getChpDepartments() {
-  const { rows } = await pool.query(
-    `SELECT DISTINCT department FROM chp.users
-     WHERE department IS NOT NULL AND btrim(department) <> ''
-     ORDER BY department`
-  );
-  return rows.map((r) => r.department);
+  return chp2Store.getDepartments(pool);   // chp2
 }
 
 app.get('/thisweekdashboard', requireRole('admin'), async (req, res) => {
@@ -1232,12 +1212,7 @@ app.post('/register', async (req, res) => {
 
   const client = await pool.connect();
   try {
-    await client.query(
-      `INSERT INTO chp.users (perid, userid, displayname, first_name, last_name, department, approvalstatus)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT DO NOTHING`,
-      [pernumber, userid, displayname, name, surname, department, 'pending']
-    );
+    await chp2Store.registerUser(client, { pernumber, userid, displayname, name, surname, department });
     await sendPushMessage(adminLineUsers,
       `คุณ ${name} ${surname} เลขประจำตัว ${pernumber} แผนก ${department} ลงทะเบียนครับ`);
   } catch (err) {

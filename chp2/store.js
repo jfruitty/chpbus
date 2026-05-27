@@ -70,4 +70,67 @@ async function getBookingGrid(db, which, lineUserId) {
   return out;
 }
 
-module.exports = { getUserData, getBookingGrid, rebuildLocation, DAY_KEY, WEEK_OFFSET };
+// ---- approval enum <-> ค่าที่ UI เดิมใช้ ----
+const APPR_TO_DISPLAY = { approved: 'approved', pending: 'pending', rejected: 'reject' };
+function apprToEnum(v) {
+  const s = String(v || '').toLowerCase();
+  if (s === 'approved') return 'approved';
+  if (s === 'reject' || s === 'rejected') return 'rejected';
+  return 'pending';
+}
+
+// ---- /member : rows รูปแบบ chp.users ----
+async function getMembers(db) {
+  const { rows } = await db.query(
+    `SELECT e.line_user_id, e.per_id, e.display_name, e.first_name, e.last_name,
+            e.department, e.factory, e.approval_status,
+            rs.seq, rs.name AS stop_name, r.name AS route_name
+     FROM chp2.employee e
+     LEFT JOIN chp2.route_stop rs ON rs.id = e.home_stop_id
+     LEFT JOIN chp2.route r       ON r.id = rs.route_id
+     ORDER BY CASE WHEN e.approval_status='pending' THEN 0 ELSE 1 END, r.name NULLS LAST, rs.seq`);
+  return rows.map(r => ({
+    userid: r.line_user_id, perid: r.per_id, displayname: r.display_name,
+    first_name: r.first_name, last_name: r.last_name, department: r.department,
+    factory: r.factory, location: rebuildLocation(r.seq, r.route_name, r.stop_name),
+    approvalstatus: APPR_TO_DISPLAY[r.approval_status] || r.approval_status,
+  }));
+}
+
+async function updateApprovalStatus(db, lineUserId, status) {
+  return db.query(`UPDATE chp2.employee SET approval_status=$1, updated_at=now() WHERE line_user_id=$2`,
+    [apprToEnum(status), lineUserId]);
+}
+async function updateDepartment(db, lineUserId, department) {
+  return db.query(`UPDATE chp2.employee SET department=$1, updated_at=now() WHERE line_user_id=$2`,
+    [department, lineUserId]);
+}
+async function getDrivers(db) {
+  return (await db.query(
+    `SELECT line_user_id AS userid, per_id AS perid, first_name, last_name
+     FROM chp2.employee WHERE department='Driver' ORDER BY first_name, last_name`)).rows;
+}
+async function getPassengers(db) {
+  return (await db.query(
+    `SELECT line_user_id AS userid, per_id AS perid, first_name, last_name
+     FROM chp2.employee WHERE department NOT IN ('Driver','Old Driver') OR department IS NULL
+     ORDER BY first_name, last_name`)).rows;
+}
+async function getDepartments(db) {
+  return (await db.query(
+    `SELECT DISTINCT department FROM chp2.employee
+     WHERE department IS NOT NULL AND btrim(department)<>'' ORDER BY department`)).rows.map(r => r.department);
+}
+async function registerUser(db, f) {
+  return db.query(
+    `INSERT INTO chp2.employee (per_id, line_user_id, display_name, first_name, last_name, department, approval_status, is_driver)
+     VALUES ($1,$2,$3,$4,$5,$6,'pending',$7)
+     ON CONFLICT (line_user_id) DO NOTHING`,
+    [f.pernumber, f.userid, f.displayname, f.name, f.surname, f.department,
+     f.department === 'Driver' || f.department === 'Old Driver']);
+}
+
+module.exports = {
+  getUserData, getBookingGrid, rebuildLocation, DAY_KEY, WEEK_OFFSET, apprToEnum,
+  getMembers, updateApprovalStatus, updateDepartment, getDrivers, getPassengers, getDepartments, registerUser,
+};
