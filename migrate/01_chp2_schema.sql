@@ -117,6 +117,7 @@ CREATE TABLE chp2.employee (
     last_name       text,
     department      text,
     factory         text,
+    supervisor      text,                                 -- หัวหน้า/ผู้อนุมัติ (ใช้หน้า /supervisor)
     home_stop_id    int REFERENCES chp2.route_stop(id),   -- จุดขึ้นรถประจำ (สายมาจากจุดนี้)
     approval_status chp2.appr_t NOT NULL DEFAULT 'pending',
     is_driver       boolean NOT NULL DEFAULT false,

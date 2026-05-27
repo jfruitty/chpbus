@@ -154,7 +154,7 @@ ON CONFLICT (route_id, seq, name) DO NOTHING;
 -- ---------- 2.5 พนักงาน (employee) + ผูก home_stop ----------
 INSERT INTO chp2.employee
   (per_id, line_user_id, display_name, first_name, last_name,
-   department, factory, approval_status, is_driver, home_stop_id)
+   department, factory, supervisor, approval_status, is_driver, home_stop_id)
 SELECT
   NULLIF(u.perid, ''),
   NULLIF(u.userid, ''),
@@ -163,6 +163,7 @@ SELECT
   NULLIF(u.last_name, ''),
   NULLIF(u.department, ''),
   NULLIF(u.factory, ''),
+  NULLIF(u.supervisor, ''),
   CASE lower(COALESCE(u.approvalstatus, ''))
     WHEN 'approved' THEN 'approved'::chp2.appr_t
     WHEN 'reject'   THEN 'rejected'::chp2.appr_t

@@ -1472,9 +1472,14 @@ const BOOKING_COLUMNS_SQL = `
 // Supervisor approval page — shows their team's THIS week bookings.
 app.get('/supervisor', async (req, res) => {
   const name = req.query.name || '';
-  // chp2 ยังไม่มีความสัมพันธ์ supervisor (employee.supervisor) — หน้านี้รอเพิ่มทีหลัง
-  // (ของเดิมก็พึ่ง column u.supervisor ที่อาจไม่มีใน chp.users) จึง render ว่างไว้ก่อน
-  res.render('supervisor', { title: 'Supervisor Approval', data: { data: [] }, name });
+  try {
+    // chp2: ทีมของหัวหน้าคนนี้ ที่มี booking สัปดาห์นี้ (กรองด้วย employee.supervisor)
+    const rows = (await chp2Store.getDashboard(pool, 'this')).filter(r => r.supervisor === name);
+    res.render('supervisor', { title: 'Supervisor Approval', data: { data: rows.map(chpBookingToRow) }, name });
+  } catch (err) {
+    console.error('GET /supervisor error:', err);
+    res.status(500).send('Server Error');
+  }
 });
 
 // HR sees ALL next-week bookings (for visibility before Friday rollover).

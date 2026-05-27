@@ -77,7 +77,7 @@ async function getDashboard(db, which) {
   const offset = WEEK_OFFSET[which] ?? 0;
   const { rows: bookings } = await db.query(
     `SELECT b.id, e.line_user_id AS userid, e.per_id AS perid, e.first_name, e.last_name,
-            e.department, b.dept_approval, rs.seq, rs.name AS stop_name, r.name AS route_name
+            e.department, e.supervisor, b.dept_approval, rs.seq, rs.name AS stop_name, r.name AS route_name
      FROM chp2.booking b
      JOIN chp2.employee e ON e.id = b.employee_id
      LEFT JOIN chp2.route_stop rs ON rs.id = b.pickup_stop_id
@@ -94,6 +94,7 @@ async function getDashboard(db, which) {
     const row = {
       userid: b.userid, perid: b.perid, first_name: b.first_name, last_name: b.last_name,
       location: rebuildLocation(b.seq, b.route_name, b.stop_name), department: b.department,
+      supervisor: b.supervisor || '',
       route: b.route_name || '',
       department_approval: APPR_TO_DISPLAY[b.dept_approval] || b.dept_approval,
     };
