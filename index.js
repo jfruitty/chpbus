@@ -727,22 +727,9 @@ async function getChpDepartments() {
 
 app.get('/thisweekdashboard', requireRole('admin'), async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT u.userid, u.perid, u.first_name, u.last_name, u.location, u.department, t.route,
-             t.monday_inbound, t.monday_outbound,
-             t.tuesday_inbound, t.tuesday_outbound,
-             t.wednesday_inbound, t.wednesday_outbound,
-             t.thursday_inbound, t.thursday_outbound,
-             t.friday_inbound, t.friday_outbound,
-             t.saturday_inbound, t.saturday_outbound,
-             t.sunday_inbound, t.sunday_outbound,
-             t.department_approval
-      FROM chp.thisweek t
-      LEFT JOIN chp.users u ON u.userid = t.userid
-      ORDER BY t.route
-    `);
+    const rows = await chp2Store.getDashboard(pool, 'this');   // chp2
     const departments = await getChpDepartments();
-    res.render('thisweekdashboard', { rows: result.rows, departments });
+    res.render('thisweekdashboard', { rows, departments });
   } catch (err) {
     console.error('GET /thisweekdashboard error:', err);
     res.status(500).send('Server Error');
@@ -751,21 +738,9 @@ app.get('/thisweekdashboard', requireRole('admin'), async (req, res) => {
 
 app.get('/nextweekdashboard', requireRole('admin'), async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT u.userid, u.perid, u.first_name, u.last_name, u.location, u.department, t.route,
-             t.monday_inbound, t.monday_outbound,
-             t.tuesday_inbound, t.tuesday_outbound,
-             t.wednesday_inbound, t.wednesday_outbound,
-             t.thursday_inbound, t.thursday_outbound,
-             t.friday_inbound, t.friday_outbound,
-             t.saturday_inbound, t.saturday_outbound,
-             t.sunday_inbound, t.sunday_outbound
-      FROM chp.nextweek t
-      LEFT JOIN chp.users u ON u.userid = t.userid
-      ORDER BY t.route
-    `);
+    const rows = await chp2Store.getDashboard(pool, 'next');   // chp2
     const departments = await getChpDepartments();
-    res.render('nextweekdashboard', { rows: result.rows, departments });
+    res.render('nextweekdashboard', { rows, departments });
   } catch (err) {
     console.error('GET /nextweekdashboard error:', err);
     res.status(500).send('Server Error');
@@ -775,7 +750,7 @@ app.get('/nextweekdashboard', requireRole('admin'), async (req, res) => {
 app.post('/update-approval-department-thisweek', requireRole('admin'), async (req, res) => {
   const { userId, status } = req.body;
   try {
-    await pool.query('UPDATE chp.thisweek SET department_approval = $1 WHERE userid = $2', [status, userId]);
+    await chp2Store.updateThisweekApproval(pool, userId, status);
     res.status(200).send('Approval status updated successfully');
   } catch (error) {
     console.error('Error updating thisweek approval:', error);
@@ -785,13 +760,12 @@ app.post('/update-approval-department-thisweek', requireRole('admin'), async (re
 
 app.get('/sumthisweek', requireRole('admin'), async (req, res) => {
   try {
-    const routeResult = await pool.query('SELECT * FROM chp.route');
-    const thisweekResult = await pool.query('SELECT * FROM chp.thisweek');
-    const rows = routeResult.rows;
+    const rows = await chp2Store.getRouteNames(pool);          // chp2 (ชื่อสาย)
+    const thisweekRows = await chp2Store.getDashboard(pool, 'this');
 
     const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
     const count = {};
-    thisweekResult.rows.forEach((item) => {
+    thisweekRows.forEach((item) => {
       const route = item.route;
       if (!count[route]) count[route] = {};
       days.forEach((day) => {
@@ -1260,59 +1234,7 @@ app.post('/nextweek', async (req, res) => {
 
   const client = await pool.connect();
   try {
-    const userResult = await client.query(
-      'SELECT location FROM chp.users WHERE userid = $1',
-      [userid]
-    );
-    if (userResult.rows.length === 0) {
-      return res.render('nextweek', { title: 'Booking Next Week', liffid: liffIds.nextweek });
-    }
-
-    const { route } = chpDeriveRoute(userResult.rows[0].location);
-
-    const exists = await client.query('SELECT 1 FROM chp.nextweek WHERE userid = $1', [userid]);
-
-    if (exists.rows.length > 0) {
-      await client.query(
-        `UPDATE chp.nextweek SET
-           monday_inbound = $1, monday_outbound = $2,
-           tuesday_inbound = $3, tuesday_outbound = $4,
-           wednesday_inbound = $5, wednesday_outbound = $6,
-           thursday_inbound = $7, thursday_outbound = $8,
-           friday_inbound = $9, friday_outbound = $10,
-           saturday_inbound = $11, saturday_outbound = $12,
-           sunday_inbound = $13, sunday_outbound = $14,
-           route = $16, department_approval = $17
-         WHERE userid = $15`,
-        [
-          fields.monin, fields.monout, fields.tuesin, fields.tuesout,
-          fields.wedin, fields.wedout, fields.thuin, fields.thout,
-          fields.friin, fields.friout, fields.satin, fields.satout,
-          fields.sunin, fields.sunout, userid, route, 'pending',
-        ]
-      );
-    } else {
-      await client.query(
-        `INSERT INTO chp.nextweek (
-           userid,
-           monday_inbound, monday_outbound,
-           tuesday_inbound, tuesday_outbound,
-           wednesday_inbound, wednesday_outbound,
-           thursday_inbound, thursday_outbound,
-           friday_inbound, friday_outbound,
-           saturday_inbound, saturday_outbound,
-           sunday_inbound, sunday_outbound,
-           route, department_approval
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-        [
-          userid,
-          fields.monin, fields.monout, fields.tuesin, fields.tuesout,
-          fields.wedin, fields.wedout, fields.thuin, fields.thout,
-          fields.friin, fields.friout, fields.satin, fields.satout,
-          fields.sunin, fields.sunout, route, 'pending',
-        ]
-      );
-    }
+    await chp2Store.upsertBooking(client, 'next', userid, fields);   // chp2 (route มาจาก home_stop)
   } catch (err) {
     console.error('POST /nextweek error:', err);
     await telegramNotify(`CHP /nextweek error: ${err.message}`);
@@ -1354,59 +1276,7 @@ app.post('/thisweek', async (req, res) => {
 
   const client = await pool.connect();
   try {
-    const userResult = await client.query(
-      'SELECT location FROM chp.users WHERE userid = $1',
-      [userid]
-    );
-    if (userResult.rows.length === 0) {
-      return res.render('thisweek', { title: 'Edit This Week', liffid: liffIds.thisweek });
-    }
-
-    const { route } = chpDeriveRoute(userResult.rows[0].location);
-
-    const exists = await client.query('SELECT 1 FROM chp.thisweek WHERE userid = $1', [userid]);
-
-    if (exists.rows.length > 0) {
-      await client.query(
-        `UPDATE chp.thisweek SET
-           monday_inbound = $1, monday_outbound = $2,
-           tuesday_inbound = $3, tuesday_outbound = $4,
-           wednesday_inbound = $5, wednesday_outbound = $6,
-           thursday_inbound = $7, thursday_outbound = $8,
-           friday_inbound = $9, friday_outbound = $10,
-           saturday_inbound = $11, saturday_outbound = $12,
-           sunday_inbound = $13, sunday_outbound = $14,
-           route = $16, department_approval = $17
-         WHERE userid = $15`,
-        [
-          fields.monin, fields.monout, fields.tuesin, fields.tuesout,
-          fields.wedin, fields.wedout, fields.thuin, fields.thout,
-          fields.friin, fields.friout, fields.satin, fields.satout,
-          fields.sunin, fields.sunout, userid, route, 'pending',
-        ]
-      );
-    } else {
-      await client.query(
-        `INSERT INTO chp.thisweek (
-           userid,
-           monday_inbound, monday_outbound,
-           tuesday_inbound, tuesday_outbound,
-           wednesday_inbound, wednesday_outbound,
-           thursday_inbound, thursday_outbound,
-           friday_inbound, friday_outbound,
-           saturday_inbound, saturday_outbound,
-           sunday_inbound, sunday_outbound,
-           route, department_approval
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-        [
-          userid,
-          fields.monin, fields.monout, fields.tuesin, fields.tuesout,
-          fields.wedin, fields.wedout, fields.thuin, fields.thout,
-          fields.friin, fields.friout, fields.satin, fields.satout,
-          fields.sunin, fields.sunout, route, 'pending',
-        ]
-      );
-    }
+    await chp2Store.upsertBooking(client, 'this', userid, fields);   // chp2 (route มาจาก home_stop)
   } catch (err) {
     console.error('POST /thisweek error:', err);
     await telegramNotify(`CHP /thisweek error: ${err.message}`);
@@ -1428,79 +1298,12 @@ app.get('/detail', (req, res) => {
 // Used to assemble the combined response below.
 
 async function chpVerifyUserData(client, userid) {
-  const result = await client.query(
-    `SELECT perid, userid, displayname, first_name, last_name, department,
-            location, approvalstatus
-     FROM chp.users WHERE userid = $1`,
-    [userid]
-  );
-  if (result.rows.length === 0) {
-    return {
-      status: 'success', approve: 'notmatch',
-      pernumber: 'no data', userid: 'no data', displayname: 'no data',
-      name: 'no data', surname: 'no data', department: 'no data', role: 'no data',
-    };
-  }
-  const r = result.rows[0];
-  return {
-    status: 'success',
-    approve: r.approvalstatus === 'approved' ? 'approved' : 'standby',
-    pernumber: r.perid,
-    userid: r.userid,
-    displayname: r.displayname,
-    name: r.first_name,
-    surname: r.last_name,
-    department: r.department,
-    role: r.location || '',
-  };
+  return chp2Store.getUserData(client, userid);   // chp2 (รูปแบบเดิม)
 }
 
 async function chpBookingData(client, table, userid) {
-  const result = await client.query(
-    `SELECT route, department_approval,
-            monday_inbound, monday_outbound,
-            tuesday_inbound, tuesday_outbound,
-            wednesday_inbound, wednesday_outbound,
-            thursday_inbound, thursday_outbound,
-            friday_inbound, friday_outbound,
-            saturday_inbound, saturday_outbound,
-            sunday_inbound, sunday_outbound
-     FROM ${table} WHERE userid = $1`,
-    [userid]
-  );
-  if (result.rows.length === 0) {
-    return {
-      status: 'success', route: '',
-      'monday(in)': '', 'monday(out)': '',
-      'tuesday(in)': '', 'tuesday(out)': '',
-      'wednesday(in)': '', 'wednesday(out)': '',
-      'thursday(in)': '', 'thursday(out)': '',
-      'friday(in)': '', 'friday(out)': '',
-      'saturday(in)': '', 'saturday(out)': '',
-      'sunday(in)': '', 'sunday(out)': '',
-      approve: '',
-    };
-  }
-  const r = result.rows[0];
-  return {
-    status: 'success',
-    route: r.route || '',
-    'monday(in)':    r.monday_inbound    || '',
-    'monday(out)':   r.monday_outbound   || '',
-    'tuesday(in)':   r.tuesday_inbound   || '',
-    'tuesday(out)':  r.tuesday_outbound  || '',
-    'wednesday(in)': r.wednesday_inbound || '',
-    'wednesday(out)':r.wednesday_outbound|| '',
-    'thursday(in)':  r.thursday_inbound  || '',
-    'thursday(out)': r.thursday_outbound || '',
-    'friday(in)':    r.friday_inbound    || '',
-    'friday(out)':   r.friday_outbound   || '',
-    'saturday(in)':  r.saturday_inbound  || '',
-    'saturday(out)': r.saturday_outbound || '',
-    'sunday(in)':    r.sunday_inbound    || '',
-    'sunday(out)':   r.sunday_outbound   || '',
-    approve: r.department_approval === 'approved' ? 'approved' : 'standby',
-  };
+  // table = 'chp.nextweek' | 'chp.thisweek' -> which
+  return chp2Store.getBookingGrid(client, table.includes('next') ? 'next' : 'this', userid);
 }
 
 async function chpDetailThisweekData(client, userid) {

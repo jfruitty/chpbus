@@ -60,6 +60,8 @@ async function getBookingGrid(db, which, lineUserId) {
   const b = rows[0];
   const out = { ...empty, route: b.route || '',
     approve: b.dept_approval === 'approved' ? 'approved' : 'standby' };
+  // มี booking แล้ว -> วันที่ไม่ได้จอง = 'ไม่ใช้' (ตรงกับที่ระบบเดิมเก็บ/LIFF คาด)
+  for (let d = 1; d <= 7; d++) { out[`${DAY_KEY[d]}(in)`] = 'ไม่ใช้'; out[`${DAY_KEY[d]}(out)`] = 'ไม่ใช้'; }
   const rides = await db.query(
     `SELECT day_of_week, bound, to_char(depart_time,'HH24:MI') AS t
      FROM chp2.booking_ride WHERE booking_id = $1`, [b.id]);
@@ -68,6 +70,52 @@ async function getBookingGrid(db, which, lineUserId) {
     out[key] = ride.t;
   }
   return out;
+}
+
+// ---- dashboards: rows รูปแบบ query เดิม (snake-case grid cols) ----
+async function getDashboard(db, which) {
+  const offset = WEEK_OFFSET[which] ?? 0;
+  const { rows: bookings } = await db.query(
+    `SELECT b.id, e.line_user_id AS userid, e.per_id AS perid, e.first_name, e.last_name,
+            e.department, b.dept_approval, rs.seq, rs.name AS stop_name, r.name AS route_name
+     FROM chp2.booking b
+     JOIN chp2.employee e ON e.id = b.employee_id
+     LEFT JOIN chp2.route_stop rs ON rs.id = b.pickup_stop_id
+     LEFT JOIN chp2.route r       ON r.id = rs.route_id
+     WHERE b.week_of = date_trunc('week',CURRENT_DATE)::date + $1::int
+     ORDER BY r.name NULLS LAST`, [offset]);
+  if (bookings.length === 0) return [];
+  const { rows: rides } = await db.query(
+    `SELECT booking_id, day_of_week, bound, to_char(depart_time,'HH24:MI') AS t
+     FROM chp2.booking_ride WHERE booking_id = ANY($1::int[])`, [bookings.map(b => b.id)]);
+  const byB = new Map();
+  for (const r of rides) (byB.get(r.booking_id) || byB.set(r.booking_id, []).get(r.booking_id)).push(r);
+  return bookings.map(b => {
+    const row = {
+      userid: b.userid, perid: b.perid, first_name: b.first_name, last_name: b.last_name,
+      location: rebuildLocation(b.seq, b.route_name, b.stop_name), department: b.department,
+      route: b.route_name || '',
+      department_approval: APPR_TO_DISPLAY[b.dept_approval] || b.dept_approval,
+    };
+    for (let d = 1; d <= 7; d++) { row[`${DAY_KEY[d]}_inbound`] = 'ไม่ใช้'; row[`${DAY_KEY[d]}_outbound`] = 'ไม่ใช้'; }
+    for (const ride of (byB.get(b.id) || [])) row[`${DAY_KEY[ride.day_of_week]}_${ride.bound}`] = ride.t;
+    return row;
+  });
+}
+
+// ชื่อสายทั้งหมด (แทน SELECT * FROM chp.route) — ใช้ใน sumthisweek
+async function getRouteNames(db) {
+  return (await db.query(`SELECT name FROM chp2.route ORDER BY pack_group, code`)).rows;
+}
+
+// /update-approval-department-thisweek
+async function updateThisweekApproval(db, lineUserId, status) {
+  return db.query(
+    `UPDATE chp2.booking b SET dept_approval=$1, updated_at=now()
+     FROM chp2.employee e
+     WHERE b.employee_id=e.id AND e.line_user_id=$2
+       AND b.week_of = date_trunc('week',CURRENT_DATE)::date`,
+    [apprToEnum(status), lineUserId]);
 }
 
 // ---- approval enum <-> ค่าที่ UI เดิมใช้ ----
@@ -130,7 +178,51 @@ async function registerUser(db, f) {
      f.department === 'Driver' || f.department === 'Old Driver']);
 }
 
+// ฟิลด์ฟอร์ม booking (เหมือน index.js) -> (day_of_week, bound)
+const FIELD_MAP = [
+  ['monin', 1, 'inbound'], ['monout', 1, 'outbound'],
+  ['tuesin', 2, 'inbound'], ['tuesout', 2, 'outbound'],
+  ['wedin', 3, 'inbound'], ['wedout', 3, 'outbound'],
+  ['thuin', 4, 'inbound'], ['thout', 4, 'outbound'],
+  ['friin', 5, 'inbound'], ['friout', 5, 'outbound'],
+  ['satin', 6, 'inbound'], ['satout', 6, 'outbound'],
+  ['sunin', 7, 'inbound'], ['sunout', 7, 'outbound'],
+];
+const validTime = (t) => t && String(t).trim() !== '' && String(t).trim() !== 'ไม่ใช้'
+  && /^\d{1,2}:\d{2}$/.test(String(t).trim());
+
+// ---- POST /nextweek,/thisweek : upsert booking + แทนที่ booking_ride ----
+// which='this'|'next'. route มาจาก home_stop (pickup_stop) ไม่ต้อง derive
+// db ต้องเป็น client (มี transaction). คืน false ถ้าไม่พบ employee
+async function upsertBooking(db, which, lineUserId, fields) {
+  const offset = WEEK_OFFSET[which] ?? 0;
+  const emp = await db.query('SELECT id, home_stop_id FROM chp2.employee WHERE line_user_id=$1', [lineUserId]);
+  if (emp.rows.length === 0) return false;
+  const { id: employeeId, home_stop_id } = emp.rows[0];
+  await db.query('BEGIN');
+  try {
+    const b = await db.query(
+      `INSERT INTO chp2.booking (employee_id, week_of, pickup_stop_id, dept_approval)
+       VALUES ($1, date_trunc('week',CURRENT_DATE)::date + $2::int, $3, 'pending')
+       ON CONFLICT (employee_id, week_of)
+       DO UPDATE SET pickup_stop_id=EXCLUDED.pickup_stop_id, dept_approval='pending', updated_at=now()
+       RETURNING id`, [employeeId, offset, home_stop_id]);
+    const bookingId = b.rows[0].id;
+    await db.query('DELETE FROM chp2.booking_ride WHERE booking_id=$1', [bookingId]);
+    for (const [key, dow, bound] of FIELD_MAP) {
+      if (validTime(fields[key])) {
+        await db.query(
+          `INSERT INTO chp2.booking_ride (booking_id, day_of_week, bound, depart_time) VALUES ($1,$2,$3,$4)`,
+          [bookingId, dow, bound, String(fields[key]).trim()]);
+      }
+    }
+    await db.query('COMMIT');
+  } catch (e) { await db.query('ROLLBACK'); throw e; }
+  return true;
+}
+
 module.exports = {
   getUserData, getBookingGrid, rebuildLocation, DAY_KEY, WEEK_OFFSET, apprToEnum,
   getMembers, updateApprovalStatus, updateDepartment, getDrivers, getPassengers, getDepartments, registerUser,
+  upsertBooking, getDashboard, getRouteNames, updateThisweekApproval,
 };
