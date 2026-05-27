@@ -169,6 +169,11 @@ function requireRole(...roles) {
   };
 }
 
+// --- chp2 (schema ใหม่) rules-admin + packing engine ---------------------------
+// เพิ่มคู่ขนาน ไม่กระทบ flow chp เดิม: หน้าแก้กฎรวมสาย RMT + ลองจัดดู (dry-run) + commit
+// เข้าที่ /chp2/rules (ต้องล็อกอิน admin). engine อ่าน/เขียน schema chp2 เท่านั้น
+app.use('/chp2/rules', requireRole('admin'), require('./chp2/adminRouter'));
+
 // CHP cutoff: after Friday 15:00 the packing for Sat/Sun/Mon has already
 // run (see Apps Script calculatedaily Friday branch at 14:30-14:35),
 // so nextweek edits should be locked until the weekly rollover.

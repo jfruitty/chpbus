@@ -1,81 +1,167 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+ไฟล์นี้เป็นคู่มือให้ Claude Code (claude.ai/code) ใช้ทำงานกับโค้ดใน repo นี้
 
-## Commands
+> หมายเหตุ: เอกสารนี้อธิบายโค้ด **เวอร์ชันปัจจุบัน** ซึ่งเป็นเวอร์ชัน refactor ที่ใช้ schema `chp.*`
+> ไฟล์สำรองของเวอร์ชันเก่า (`gateway.*`) คือ [index.gateway.bak.js](index.gateway.bak.js) — อย่าเอามาอ้างอิง
 
-- `npm start` — run the server (`node index.js`).
-- `npm run dev` — run with `nodemon` for auto-reload (nodemon is not in `devDependencies`; install globally or with `npx`).
-- `npm test` — **not implemented**; the script just `exit 1`. There is no test framework configured.
-- Lint config exists ([.eslintrc.json](.eslintrc.json), `eslint-config-standard`), but no `lint` script. Run with `npx eslint index.js` if needed.
-- The server listens on a **hardcoded** port `3000` ([index.js:4614](index.js#L4614)) — `PORT` env var is ignored.
+## คำสั่ง (Commands)
 
-## Configuration
+- `npm start` — รัน server (`node index.js`)
+- `npm run dev` — รันด้วย `nodemon` (auto-reload; `nodemon` ไม่ได้อยู่ใน `devDependencies` ต้องลง global หรือใช้ `npx`)
+- `npm test` — **ยังไม่มี**; script แค่ `exit 1` ไม่มี test framework
+- มี lint config ([.eslintrc.json](.eslintrc.json), `eslint-config-standard`) แต่ไม่มี `lint` script — รันเองด้วย `npx eslint index.js`
+- Server อ่าน port จาก `process.env.PORT` (default `3000`) ที่ [index.js:2598](index.js#L2598)
 
-Secrets live in `.env` (gitignored, loaded via `dotenv`):
+## การตั้งค่า (Configuration)
 
-- `CHANNELACCESSTOKEN`, `CHANNELSECRET` — LINE Messaging API credentials.
-- `DATABASE_URL` — external Render Postgres connection string (default).
-- `INTERNALCONNECT` — Render-internal hostname; swap for `DATABASE_URL` when deployed on Render itself ([index.js:19-29](index.js#L19-L29)).
+Secret ทั้งหมดอยู่ใน `.env` (gitignored, โหลดผ่าน `dotenv`):
 
-The [README.md](README.md) is **stale upstream starter content** — it references a `config.json` and configurable port that this fork no longer uses. Ignore it.
+- `DATABASE_URL` — connection string ของ PostgreSQL (pool ตั้งที่ [index.js:17-24](index.js#L17-L24), `ssl.rejectUnauthorized: false`, `max: 95`)
+- `CHANNELACCESSTOKEN`, `CHANNELSECRET` — credential ของ LINE Messaging API
+- `LINE_CHANNEL_ID` — ใช้ตรวจ client_id ตอน verify access token
+- `LIFF_REGISTER`, `LIFF_NEXTWEEK`, `LIFF_THISWEEK`, `LIFF_DETAIL`, `LIFF_SUPAPPROVE`, `LIFF_HR` — LIFF ID แยกตามหน้า (โหลดเข้า object `liffIds` ที่ [index.js:68-75](index.js#L68-L75) — **ไม่ฮาร์ดโค้ดแล้ว**)
+- `ADMIN_LINE_USERS` — LINE userId ของ admin/HR (คั่นด้วย comma) ใช้เป็นปลายทาง push แจ้งเตือน
+- `ERROR_NOTIFY_USER` — userId ปลายทางแจ้งเตือนเมื่อ cron ล้มเหลว
 
-## Architecture
+Deploy จริงอยู่บน **Railway** (host โซน Singapore UTC+8) — cron ย้ายมาไว้ในแอปแล้ว (ดูหัวข้อ Scheduler)
 
-This is a **single-file monolith**: virtually all server logic lives in [index.js](index.js) (~4600 lines). It is an Express app that serves EJS-rendered LIFF mini-apps and a LINE webhook to manage a weekly employee shuttle-bus booking system for Resonac (Gateway plant). Data lives in PostgreSQL under the `gateway.*` schema.
+[README.md](README.md) เป็น **starter content เก่าค้าง** (อ้างถึง `config.json` กับ port ที่ตั้งค่าได้ ซึ่ง fork นี้ไม่ใช้แล้ว) — ข้ามไป
 
-### LINE/LIFF integration
+## สถาปัตยกรรม (Architecture)
 
-- LINE webhook: `POST /callback` ([index.js:4408](index.js#L4408)), guarded by an HMAC-SHA256 signature middleware ([index.js:4390](index.js#L4390)).
-- The bot replies to text `/checkin` with a Flex menu and `location` with a static location.
-- **Known bug**: `validateSignatureMiddleware` and the `reply*` helpers reference an undefined `config` variable (`config.channelSecret`, `config.channelAccessToken`). Calling `/callback` or any reply path will throw `ReferenceError`. The push-message path (`sendPushMessage`, [index.js:3978](index.js#L3978)) correctly uses `process.env.CHANNELACCESSTOKEN` and works. If you touch the webhook, fix this — it has been latent since the dotenv migration.
-- LIFF IDs (e.g., `2005019112-X2WPDJwv` for `/register`, `-pWR2kZDm` for `/nextweek`) are **hardcoded inline at each route**. Search for `liffid:` to find them all.
+เป็น **monolith ไฟล์เดียว**: logic ฝั่ง server แทบทั้งหมดอยู่ใน [index.js](index.js) (~2600 บรรทัด) เป็น Express app ที่ serve หน้า LIFF mini-app (render ด้วย EJS) + LINE webhook เพื่อจัดการระบบจองรถรับส่งพนักงานรายสัปดาห์ของ Resonac (โรงงาน CHP/Gateway) ข้อมูลอยู่ใน PostgreSQL schema `chp.*`
 
-### Database schema (`gateway.*`)
+### โครงสร้างไฟล์ในโปรเจกต์
 
-The schema has three classes of tables — all column-compatible within a class so data flows by `INSERT INTO ... SELECT FROM`.
+```
+chpbus/
+├── index.js                  # monolith server ทั้งหมด (~2600 บรรทัด)
+├── index.gateway.bak.js      # backup เวอร์ชันเก่า gateway.* (ไม่ track ใน git, local เท่านั้น) — อย่าอ้างอิง
+├── package.json / package-lock.json
+├── .eslintrc.json            # eslint-config-standard (ไม่มี lint script)
+├── .env                      # secrets (gitignored) — ดูหัวข้อ Configuration
+├── README.md                 # starter เก่าค้าง — ข้าม
+├── CLAUDE.md                 # ไฟล์นี้
+│
+├── chp_schema.sql            # dump schema ปัจจุบัน (chp.*)
+├── gateway_schema.sql        # dump schema เก่า (gateway.*) — อ้างอิงประวัติ
+├── import_chp.sql            # script import/staging (chp._stage_*)
+├── import_chp_fix.sql        # patch ของ import ข้างบน
+├── Shutterbus - *.csv        # ข้อมูล import (member/nextweek/thisweek/util);
+│                             #   "Shutterbus - sumthisweek.csv" = แหล่ง caps matrix ที่ chpPack โหลดตอน startup
+│
+├── views/                    # EJS templates
+│   ├── (ใช้จริง) login, member, thisweekdashboard, nextweekdashboard, sumthisweek,
+│   │            supervisor, hrnextweek, driver, seatdriver, bustoday, seattoday,
+│   │            busfromhr, seatfromhr, bushistory, seathistory, changelog,
+│   │            register, nextweek, thisweek
+│   └── (legacy/ไม่ถูกใช้) index, hr, newbookingpage, driverplan, oldnextweek,
+│                          oldthisweek, drivercheck   (detail.ejs ถูกอ้างแต่ไฟล์ไม่มีจริง)
+│
+└── public/                   # static assets (mount ที่ "/" และ "/static")
+    ├── css/   styles, dashboard, modal-form, thisweekdashboard, member, driver
+    └── js/    picker, sum, dashboard, member, table-tools,         # shared/helper
+                driver, seatdriver, bustoday, seattoday,            # client-render หน้า list (fetch *json)
+                busfromhr, seatfromhr, changelog
+```
 
-- **Booking** (per-employee weekly grid of inbound/outbound times): `lastweek`, `thisweek`, `nextweek`. Each row = one user × one route, with `monday_inbound`/`monday_outbound`/... columns plus `department_approval`.
-- **Bus assignments** (system → driver → HR pipeline, two parallel tables each):
-  - Bus list (route/day/bound/time/bus_number): `driver` → `bustoday` → `busfromhr`
-  - Seat list (per-passenger): `seatdriver` → `seattoday` → `seatfromhr`
-- **History snapshots** taken at each pipeline stage: `driverhistoryfromsystem`/`seathistoryfromsystem` (when system computes), `driverhistoryfromdriver`/`seathistoryfromdriver` (when sent to HR), `driverhistoryfromhr`/`seathistoryfromhr` (when HR finalizes).
-- Other: `users` (registered employees), `route` (route catalog).
+### LINE / LIFF
 
-### Weekly data lifecycle (the thing to internalize)
+- LINE webhook: `POST /callback` ([index.js:2468](index.js#L2468)) ผ่าน middleware ตรวจลายเซ็น HMAC-SHA256 `validateSignatureMiddleware` ([index.js:2395](index.js#L2395)) — ใช้ค่า `channelSecret` constant อย่างถูกต้อง (บั๊ก `config` undefined ของเวอร์ชันเก่าถูกแก้แล้ว)
+- LIFF mini-app ยืนยันตัวตนด้วย LINE access token ผ่าน `POST /verifyaccesstoken` ([index.js:256](index.js#L256)) ตรวจ client_id เทียบกับ `LINE_CHANNEL_ID`
+- หน้า admin/HR ใช้ middleware `requireRole('admin')`
 
-Booking advances through stages via specific endpoints intended to be hit by a scheduler:
+### Schema ฐานข้อมูล (`chp.*`)
 
-1. Employees book next week via LIFF (`POST /nextweek`) → writes to `gateway.nextweek`.
-2. **Weekly rollover** — `GET /weekly` ([index.js:3276](index.js#L3276)): `thisweek` → `lastweek`, `nextweek` → `thisweek`, then clears `nextweek`.
-3. **Daily bus packing** — `GET /daliy` (sic, [index.js:3007](index.js#L3007)): runs `calculatebus(day, 'before'|'after')` which reads `thisweek` + `route`, packs passengers into buses with `MAX_SEATS = 13`, and writes proposals to `driver` + `seatdriver`. Snapshots into `*historyfromsystem`. Skips weekends; on Friday, pre-computes Sat/Sun/Mon.
-4. **Pack scheduler dispatches HR review** — `POST /driversendtohr` ([index.js:3080](index.js#L3080)): promotes `driver` → `bustoday`, `seatdriver` → `seattoday`, clears proposals, snapshots `*historyfromdriver`, pushes LINE notification.
-5. HR adjusts via `bustoday`/`seattoday` admin pages, then approves → copies to `busfromhr`/`seatfromhr`, snapshots `*historyfromhr`.
+ตารางแบ่งเป็น 3 กลุ่ม โดยตารางในกลุ่มเดียวกัน column เหมือนกันหมด ข้อมูลจึงไหลด้วย `INSERT INTO ... SELECT FROM` ได้
 
-### `before` vs `after` time split (calculatebus)
+- **Booking** (grid รายสัปดาห์ของแต่ละคน): `lastweek`, `thisweek`, `nextweek` — 1 แถว = user × route หนึ่งราย มี 14 column `monday_inbound`/`monday_outbound`/.../`sunday_outbound` (ค่าเป็นเวลา `"HH:MM"` หรือ sentinel `'ไม่ใช้'`) + `department_approval`
+  - `hrnextweek` — snapshot ของ `nextweek` ที่ HR ใช้ (เพิ่ม column `week_of`) สร้างทุกศุกร์ เก็บแยกตามสัปดาห์
+- **Bus assignment** (pipeline system → driver → HR): `driver` → `bustoday` → `busfromhr` (column: route/day/bound/time/`bus_number` + `driver_user_id` + ชื่อ + `service_date`)
+- **Seat list** (รายผู้โดยสาร): `seatdriver` → `seattoday` → `seatfromhr` (column: route/location/day/bound/time/`busnumber`/`seat` + ชื่อ)
+- อื่น ๆ: `users` (พนักงานที่ลงทะเบียน), `route` (แค็ตตาล็อกเส้นทาง), `change_log` (audit trail)
 
-`calculatebus` runs twice per day with a `time` arg ([index.js:765](index.js#L765)). The `INVALID_TIMES` array filters bookings:
-- `'after'` excludes morning runs `05:15, 07:30, 08:15, 10:30` (only pack PM departures).
-- `'before'` excludes evening runs `17:15, 19:30, 20:15` (only pack AM departures).
+**ข้อควรรู้สำคัญ (อย่าหลงตามชื่อตาราง):**
+- ตาราง history 6 ตัว (`driverhistoryfrom*`, `seathistoryfrom*`) **เป็นตารางตาย** — ไม่มีโค้ดอ่านหรือเขียนเลย หน้า `/bushistory` กับ `/seathistory` จริง ๆ อ่านจาก `busfromhr`/`seatfromhr`
+- ตาราง `locations` กับ `approvalstatus` **ไม่ถูกใช้** (คำว่า approvalstatus มีเฉพาะเป็น column ใน `users`)
+- "ประวัติ" ที่ใช้จริงคือ: `busfromhr`/`seatfromhr` (snapshot batch ล่าสุด) + `change_log` (audit) + `hrnextweek` (snapshot booking รายสัปดาห์)
+- ⚠️ โค้ดอ้าง column `users.supervisor` (ที่ `/supervisor`, `/hrnextweek`) แต่ schema dump ไม่มี column นี้ — น่าจะถูกเพิ่มนอก migration ถ้าแตะส่วนนี้ต้องเช็ก
+- `service_date` (วันที่จริง) ถูกเพิ่มเข้า pipeline tables ผ่าน migration แบบ additive ([index.js:46-51](index.js#L46-L51))
+- ชื่อ column ไม่สม่ำเสมอ: ฝั่ง bus ใช้ `bus_number`/`per_id` แต่ฝั่ง seat ใช้ `busnumber`/`perid`; day ฝั่ง bus เป็นอังกฤษ (monday) ฝั่ง seat เป็นไทย (จันทร์)
 
-This lets each day's morning/evening cohorts be packed independently into separate bus assignments.
+### Migration ตอน startup
+
+`chpEnsureSchema()` ([index.js:31-61](index.js#L31-L61)) รันทุกครั้งที่บูต เป็นแบบ additive ล้วน (`CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`) ปลอดภัย ไม่แตะข้อมูลเดิม — สร้าง `hrnextweek`, `change_log` และเพิ่ม column `service_date`
+
+### วงจรข้อมูลรายสัปดาห์ (ส่วนที่ต้องเข้าใจให้ขึ้นใจ)
+
+1. พนักงานจองสัปดาห์หน้าผ่าน LIFF (`POST /nextweek`, [index.js:1254](index.js#L1254)) → เขียนลง `chp.nextweek` (`route` ถูก derive จาก pickup `location` ของ user ผ่าน `chpDeriveRoute`); มี cutoff ล็อก: ศุกร์ ≥ 15:00 และเสาร์/อาทิตย์ จะจองไม่ได้ (`isAfterChpCutoff`)
+2. **Rollover รายสัปดาห์** — `GET /weekly` ([index.js:2274](index.js#L2274)): `thisweek` → `lastweek`, `nextweek` → `thisweek` แล้วล้าง `nextweek`
+3. **จัดรถรายวัน** — `runDaily()` ([index.js:2292](index.js#L2292), เปิดเป็น `GET /daliy` ที่ [index.js:2342](index.js#L2342)): เรียก `chpPack(day, kind, group)` ([index.js:2127](index.js#L2127)) ที่อ่าน `thisweek` (เฉพาะแถวที่ `department_approval='approved'` และมี `location`) แล้วจัดคนลงรถ/ที่นั่ง เขียนผลลง `driver` + `seatdriver` ข้ามเสาร์-อาทิตย์ และวันศุกร์จะ pre-compute เสาร์/อาทิตย์/จันทร์ล่วงหน้า (พร้อมทำ rollover inline)
+4. **ส่งให้ HR รีวิว** — `POST /driversendtohr` ([index.js:2377](index.js#L2377)): เลื่อน `driver` → `bustoday`, `seatdriver` → `seattoday` แล้วล้างตาราง proposal + push แจ้งเตือน LINE
+5. **HR ปิดงาน** — `POST /sendmsgtodriver` ([index.js:1122](index.js#L1122)): push manifest ให้คนขับแต่ละคัน + รายละเอียดที่นั่งให้ผู้โดยสารแต่ละคน แล้วคัด `bustoday` → `busfromhr`, `seattoday` → `seatfromhr` (ตัวที่อ่านโชว์/ดาวน์โหลดจริง)
+
+### การจัดรถ — `chpPack(day, kind, group)`
+
+- `day`: 1=จันทร์ … 7=อาทิตย์ | `kind`: `'before'` (รอบเช้า) / `'after'` (รอบเย็น) | `group`: `'A'` หรือ `'B'`
+- มี wrapper 4 ตัว ([index.js:2231-2234](index.js#L2231-L2234)) จับคู่ before/after × A/B
+- **ความจุ**: van/รถตู้ = **13** ที่นั่ง, รถบัสใหญ่เส้น `'ลาดบัวขาว รถบัส'` = **42** ที่นั่ง (ค่าฮาร์ดโค้ดอยู่ใน `chpPack`) — ส่วน "เมื่อไหร่ล้นไป route รวม" คุมด้วย **caps matrix** ที่โหลดจาก CSV `Shutterbus - sumthisweek.csv` ตอน startup (ไม่มี constant `MAX_SEATS` แล้ว)
+- เมื่อ route เต็มที่ slot นั้น จะ spillover ไป route รวมตาม chain ที่ฮาร์ดโค้ด (`chpSpilloverA`/`chpSpilloverB`)
+- seat = `pax % busSize`, `bus_number = ceil(pax / busSize)` (ล้นคันหนึ่งก็เปิดคันถัดไป)
+
+### split `before` vs `after`
+
+ไม่มี array `INVALID_TIMES` แล้ว — การแยกรอบเช้า/เย็นทำผ่าน slot index ใน `chpPack` ([index.js:2175-2176](index.js#L2175-L2176)). `chpTimeToIndex(time, bound)` ให้ index 0–5 ต่อวัน:
+
+| index | bound | เวลา | รอบ |
+|---|---|---|---|
+| 0 | ขาเข้า | 07:30 | before (เช้า) |
+| 1 | ขาออก | 08:15 | before |
+| 2 | ขาเข้า | 10:30 | before |
+| 3 | ขาออก | 17:15 | after (เย็น) |
+| 4 | ขาเข้า | 19:30 | after |
+| 5 | ขาออก | 20:15 | after |
+
+`'before'` เก็บ index < 3 (เช้า), `'after'` เก็บ index ≥ 3 (เย็น) — แยก cohort เช้า/เย็นของแต่ละวันให้จัดรถแยกกัน
+
+### Scheduler (node-cron ในแอป)
+
+`chpStartSchedulers()` ([index.js:2586](index.js#L2586)) ตั้ง cron 3 งาน ทุกงานใช้ `{ timezone: 'Asia/Bangkok' }` (host อยู่ SG UTC+8 แต่ node-cron ตีความ expression เป็นเวลา BKK ให้เอง):
+
+| cron | เวลา BKK | งาน |
+|---|---|---|
+| `0 0 * * *` | ทุกวัน 00:00 | `chpResetApprove` — เซ็ต `thisweek` ทุกแถวเป็น `'pending'` |
+| `30 13 * * 5` | ศุกร์ 13:30 | `chpSnapshotNextweekForHr` — snapshot `nextweek` → `hrnextweek` (ต้องก่อน 14:30) |
+| `30 14 * * 1-5` | จ.–ศ. 14:30 | `runDaily` — จัดรถ + rollover (วันศุกร์) |
+
+ทุกงาน trigger เองได้ผ่าน endpoint: `GET /daliy`, `GET /autoresetapprove`, `GET /tranfernextweekforhr`, `GET /weekly`
+⚠️ helper เวลา (`bangkok*`) บวก +7h เองถูกต้อง **ยกเว้น** `isAfterChpCutoff()` ([index.js:175](index.js#L175)) ที่ใช้ `getDay()`/`getHours()` ของ server ตรง ๆ (บั๊กแฝงถ้า host ไม่ใช่ BKK)
 
 ### View layer
 
-EJS templates in [views/](views/). Static assets in [public/](public/) (also mounted at `/static`). Most user-facing pages are LIFF mini-apps that authenticate via LINE access token (`POST /verifyaccesstoken`, [index.js:105](index.js#L105)) and verify `client_id === '2005019112'`.
+EJS templates อยู่ใน [views/](views/), static อยู่ใน [public/](public/) (mount ที่ `/static` ด้วย) มี 2 รูปแบบ:
+- **server-rendered** (วน `rows` ใน EJS): `member`, `thisweekdashboard`, `nextweekdashboard`, `sumthisweek`, `supervisor`, `hrnextweek`, `busfromhr`, `seatfromhr`
+- **client-rendered** (`<tbody>` ว่าง, JS fetch endpoint `*json` มา build เอง): `driver`, `seatdriver`, `bustoday`, `seattoday`, `changelog` และ LIFF app (`register`, `nextweek`, `thisweek`) — contract ของ field อยู่ใน `public/js/*.js` ไม่ใช่ใน template
 
-### CSV/Excel exports
+template ที่ไม่ถูกใช้/พัง (ข้ามได้): `index.ejs`, `hr.ejs`, `newbookingpage.ejs`, `driverplan.ejs`, `oldnextweek.ejs`, `oldthisweek.ejs`, `drivercheck.ejs`; และ `GET /detail` ([index.js:1442](index.js#L1442)) เรียก `res.render('detail')` ทั้งที่ไฟล์ `detail.ejs` **ไม่มีอยู่จริง** (route นี้พัง)
 
-Endpoints `GET /download-csv-*` and `GET /download-excel-busfromhr` use `csv-writer` / `exceljs` to dump the bus/seat tables for HR. Files are written to disk (project root) then served — there is no temp-dir cleanup.
+### Export CSV/Excel
 
-### Notifications
+endpoint `GET /download-csv-*` และ `/download-excel-*` ใช้ `csv-writer` / `exceljs` dump ตาราง bus/seat ให้ HR ไฟล์ถูกเขียนลง disk (root ของ project) แล้วค่อย serve — **ไม่มีการลบ temp file**
 
-- `sendPushMessage(userIds, msg)` calls LINE `/v2/bot/message/multicast`.
-- `telegramNotify(msg)` posts to a hardcoded Telegram bot/chat ([index.js:146](index.js#L146)) used for deploy + pipeline alerts.
+### การแจ้งเตือน (Notifications)
 
-## Conventions / gotchas when editing
+- `sendPushMessage(userIds, msg)` ([index.js:202](index.js#L202)) ยิง LINE `/v2/bot/message/multicast` ไปยัง `adminLineUsers` (จาก env `ADMIN_LINE_USERS`)
+- `telegramNotify(msg)` ([index.js:181](index.js#L181)) โพสต์เข้า Telegram bot/chat ใช้แจ้ง deploy + pipeline
 
-- The `pg.Pool` is shared at module scope (`max: 95`, `keepAlive: true`). Long-running handlers must `client.release()` in a `finally`. Several handlers do this; copy that pattern. Do **not** call `client.release()` if you used `pool.query(...)` directly.
-- Many SQL statements interpolate via `$1, $2, ...` parameters — keep that pattern, never string-concat user input into SQL.
-- `process.env.CHANNELACCESSTOKEN` is captured **once at startup** into the `accessToken` constant ([index.js:31](index.js#L31)). Restart the server after rotating tokens.
-- The hardcoded user ID `U5da05fd30c7794592221bb51827861d4` appearing in `sendPushMessage` calls is the HR/admin LINE recipient.
+### Audit log
+
+`chpLog(actor, action, rowId, detail)` ([index.js:90](index.js#L90)) เขียน `change_log` (ไม่มีวัน throw) มี middleware ([index.js:105-117](index.js#L105-L117)) บันทึก POST ที่แก้ข้อมูลทุกตัวที่สำเร็จ (status < 400) อัตโนมัติ ดูผ่าน `GET /changelogjson`
+
+## ข้อตกลง / จุดที่ต้องระวังเวลาแก้
+
+- `pg.Pool` แชร์ที่ module scope (`max: 95`, `keepAlive: true`) — handler ที่ `pool.connect()` ต้อง `client.release()` ใน `finally` (ก็อป pattern จาก handler ที่ทำอยู่แล้ว) แต่ **อย่า** เรียก `client.release()` ถ้าใช้ `pool.query(...)` ตรง ๆ
+- ค่าที่มาจาก user ใส่ผ่าน parameter `$1, $2, ...` เสมอ — ห้าม string-concat user input เข้า SQL (มีบางจุด interpolate **ชื่อตาราง** เข้า template literal แต่ทุกที่ส่ง constant ที่ฮาร์ดโค้ด ไม่ใช่ค่าจาก user — ปลอดภัย แต่ให้รู้ไว้)
+- `process.env.CHANNELACCESSTOKEN` ถูก capture ครั้งเดียวตอน startup เป็น constant `accessToken` ([index.js:64](index.js#L64)) — rotate token แล้วต้อง restart server
+- ปลายทาง LINE ของ admin/HR มาจาก env `ADMIN_LINE_USERS` (`adminLineUsers`) ไม่ใช่ค่าฮาร์ดโค้ดแล้ว
