@@ -41,15 +41,14 @@
                             var status = 'ยืนยันตัวตนแล้ว';
 
                             createProfileCard(profile.pictureUrl, profile.displayName, status);
-                            createLocationEditor(accessToken, data.userData.home_stop_id, data.userData.role);
-
+                            // pickup-point editor hidden for now (createLocationEditor below is dead code)
 
                         } else if (data.userData.approve == 'standby') {
 
                             var status = 'รอแอดมินยืนยัน';
 
                             createProfileCard(profile.pictureUrl, profile.displayName, status);
-                            createLocationEditor(accessToken, data.userData.home_stop_id, data.userData.role);
+                            // pickup-point editor hidden for now
 
                         } else {
                           

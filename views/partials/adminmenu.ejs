@@ -6,22 +6,31 @@
   // middleware in index.js); /chp2/rules matches by prefix so its sub-pages
   // keep the item highlighted. Self-contained styling (unique .adminmenu*
   // classes) so it looks the same regardless of which page CSS is loaded.
+  //
+  // Per-item 3rd element: optional 'admin'/'driver' restricts visibility.
+  // Items with no role flag are visible to both roles. Empty groups (after
+  // filtering) are hidden entirely so a driver session sees a slimmer sidebar.
   var _p = (typeof currentPath !== 'undefined' && currentPath) ? currentPath : '';
+  var _role = (typeof userRole !== 'undefined' && userRole) ? userRole : 'admin';
   function _isActive(href) { return _p === href || _p.indexOf(href + '/') === 0; }
+  function _allowed(it) { return !it[2] || it[2] === _role; }
   var _groups = [
     { title: 'สมาชิก & การจอง', items: [
-      ['/member', 'Member'], ['/thisweekdashboard', 'Thisweek'],
-      ['/nextweekdashboard', 'Nextweek'],
-      ['/sumthisweek', 'Sum (สัปดาห์นี้)'], ['/sumnextweek', 'Sum (สัปดาห์หน้า)'] ] },
+      ['/member', 'Member', 'admin'], ['/thisweekdashboard', 'Thisweek', 'admin'],
+      ['/nextweekdashboard', 'Nextweek', 'admin'],
+      ['/sumthisweek', 'Sum (สัปดาห์นี้)', 'admin'], ['/sumnextweek', 'Sum (สัปดาห์หน้า)', 'admin'] ] },
     { title: 'จัดรถ', items: [
       ['/driver', 'Driver (เสนอ)'], ['/seatdriver', 'Seat (เสนอ)'],
-      ['/bustoday', 'Bus (วันนี้)'], ['/seattoday', 'Seat (วันนี้)'] ] },
+      ['/bustoday', 'Bus (วันนี้)', 'admin'], ['/seattoday', 'Seat (วันนี้)', 'admin'] ] },
     { title: 'ผล HR & ประวัติ', items: [
       ['/busfromhr', 'BusfromHr'], ['/seatfromhr', 'SeatfromHr'],
-      ['/bushistory', 'Bus History'], ['/seathistory', 'Seat History'] ] },
+      ['/bushistory', 'Bus History', 'admin'], ['/seathistory', 'Seat History', 'admin'] ] },
     { title: 'ระบบ', items: [
-      ['/chp2/rules', 'เงื่อนไขจัดรถ (RMT)'], ['/changelog', 'Log'] ] },
+      ['/chp2/rules', 'เงื่อนไขจัดรถ (RMT)', 'admin'], ['/changelog', 'Log'] ] },
   ];
+  // Filter items by current role, then drop any group left empty.
+  _groups = _groups.map(function (g) { return { title: g.title, items: g.items.filter(_allowed) }; })
+                   .filter(function (g) { return g.items.length > 0; });
   var _openIdx = -1;
   _groups.forEach(function (g, i) { if (g.items.some(function (it) { return _isActive(it[0]); })) _openIdx = i; });
   if (_openIdx === -1) _openIdx = 0;

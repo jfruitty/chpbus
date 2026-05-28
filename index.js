@@ -88,10 +88,18 @@ app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// Expose the current path to every EJS render so the shared admin sidebar
-// partial (views/partials/adminmenu.ejs) can mark the active menu item
-// without each route having to pass it in.
-app.use((req, res, next) => { res.locals.currentPath = req.path; next(); });
+// Expose the current path + user role to every EJS render so the shared admin
+// sidebar partial (views/partials/adminmenu.ejs) can mark the active menu item
+// and hide admin-only items from non-admin sessions, without each route having
+// to pass them in.
+app.use((req, res, next) => {
+  res.locals.currentPath = req.path;
+  try {
+    const u = verifyAuth(parseCookies(req)[AUTH_COOKIE]);
+    res.locals.userRole = u && u.role;
+  } catch (e) { res.locals.userRole = null; }
+  next();
+});
 
 // --- Change log -------------------------------------------------------------
 // Append-only audit trail in chp.change_log so data changes can be traced and
