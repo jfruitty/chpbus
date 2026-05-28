@@ -269,9 +269,13 @@ async function weekDiagnostics(db, weekOf, dow) {
   }
   return out;
 }
+const BOUND_TH = { inbound: 'ขาเข้า', outbound: 'ขาออก' };
 function renderPlan(base, date, weekOf, dow, plan, committed, diag) {
   const bySlot = new Map();
-  for (const b of plan) { const k = `${b.bound} ${b.depart_time}`; (bySlot.get(k) || bySlot.set(k, []).get(k)).push(b); }
+  for (const b of plan) {
+    const k = `${BOUND_TH[b.bound] || b.bound} ${b.depart_time}`;
+    (bySlot.get(k) || bySlot.set(k, []).get(k)).push(b);
+  }
   const tag = (k) => k === 'merge' ? '🔗 รวม' : k === 'bus' ? '🚌 บัส' : k === 'solo-fallback' ? 'เดี่ยว*' : 'เดี่ยว';
   let body = committed ? `<div class="card ok">✅ บันทึกแผนวันที่ ${esc(date)} ลง chp2 (stage system) แล้ว</div>` : '';
   body += `<div class="card">${dryrunForm(base, date)}
@@ -288,8 +292,21 @@ function renderPlan(base, date, weekOf, dow, plan, committed, diag) {
     body += `</p>`;
   }
   for (const [slot, buses] of bySlot) {
-    body += `<h3>${esc(slot)}</h3><table><tr><th>สาย</th><th>ชนิด</th><th>คันที่</th><th>ที่นั่ง</th></tr>` +
-      buses.map(b => `<tr><td><code>${esc(b.route_code)}</code></td><td>${tag(b.kind)}</td><td>${b.bus_number}</td><td>${b.seats.length}/${b.capacity}</td></tr>`).join('') + `</table>`;
+    body += `<h3>${esc(slot)}</h3>`;
+    for (const b of buses) {
+      const routeLabel = `<code>${esc(b.route_code)}</code> ${esc(b.route_name)}`;
+      body += `<details open class="bus-block" style="background:#fff;border:1px solid #dde3e8;border-radius:6px;padding:8px 12px;margin:0 0 8px">
+        <summary style="cursor:pointer;list-style:revert"><b>${routeLabel}</b> — ${tag(b.kind)} · คันที่ ${b.bus_number} · <b>${b.seats.length}</b>/${b.capacity} ที่</summary>
+        <table style="margin:8px 0 0"><tr><th style="width:60px">ที่นั่ง</th><th>จุดขึ้น</th><th style="width:110px">รหัสพนักงาน</th><th>ชื่อ-นามสกุล</th></tr>`;
+      for (const s of b.seats) {
+        const p = s.pax;
+        const stopSeq = p.stop_seq != null ? `[${String(p.stop_seq).padStart(2, '0')}] ` : '';
+        const homeRouteTag = p.home_route_name && p.home_route_name !== b.route_name
+          ? ` <span class="muted">(${esc(p.home_route_name)})</span>` : '';
+        body += `<tr><td>${s.seat_no}</td><td>${stopSeq}${esc(p.stop_name || '')}${homeRouteTag}</td><td>${esc(p.per_id || '')}</td><td>${esc(p.first_name || '')} ${esc(p.last_name || '')}</td></tr>`;
+      }
+      body += `</table></details>`;
+    }
   }
   return body;
 }
