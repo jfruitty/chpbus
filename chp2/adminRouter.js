@@ -51,8 +51,9 @@ function layout(title, base, body) {
 </header><main>${body}</main></body></html>`;
 }
 function mk(title, base, body) { return { title, base, bodyHtml: body }; }
+const BOUND_LABEL = { inbound: 'ขาเข้า (ออกจากบ้าน)', outbound: 'ขาออก (ออกจากโรงงาน)' };
 const boundOpts = (sel) => ['', 'inbound', 'outbound']
-  .map(b => `<option value="${b}"${b === (sel ?? '') ? ' selected' : ''}>${b === '' ? '(ทั้งสองทิศ)' : b}</option>`).join('');
+  .map(b => `<option value="${b}"${b === (sel ?? '') ? ' selected' : ''}>${b === '' ? '(ทั้งสองทิศ)' : BOUND_LABEL[b]}</option>`).join('');
 const routeOpts = (routes, sel, blank) =>
   (blank ? `<option value="">(ไม่มี)</option>` : '') +
   routes.map(r => `<option value="${r.id}"${r.id === sel ? ' selected' : ''}>${esc(r.code)} — ${esc(r.name)}</option>`).join('');
@@ -107,23 +108,97 @@ router.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// ---------- route flags ----------
+// ---------- route flags (card layout, level-2 redesign) ----------
+function routeCard(r, allRoutes) {
+  // chip row: stops · merge groups it joins · # dispatch rules
+  const chips = [];
+  chips.push(`<span class="chip">${r.stops} จุด</span>`);
+  if (r.in_groups) chips.push(`<span class="chip">กลุ่มรวม: ${esc(r.in_groups)}</span>`);
+  if (Number(r.rules) > 0) chips.push(`<span class="chip">กฎจุด ${r.rules} ข้อ</span>`);
+  if (r.never_merge) chips.push(`<span class="chip warn">วิ่งเดี่ยวเสมอ</span>`);
+  if (r.bus_threshold != null) chips.push(`<span class="chip bus">บัสเมื่อ ≥${r.bus_threshold}</span>`);
+
+  const head = `<div class="rcard-head">
+    <span class="code">${esc(r.code)}</span><span class="name">${esc(r.name)}</span>
+    <div class="rcard-meta">${chips.join('')}</div>
+  </div>`;
+
+  if (r.is_combined) {
+    return `<div class="rcard">${head}
+      <div class="readonly">สายรวม — สร้างโดย engine ตอน merge group ทำงาน ไม่ต้องตั้งเงื่อนไข</div></div>`;
+  }
+
+  // Editable card for sub-routes.
+  return `<div class="rcard">${head}
+    <form class="rcard-form" action="${esc(routeCard.base)}/routes/${r.id}" method="post">
+      <fieldset><legend>⚙️ เมื่อไหร่ "วิ่งเดี่ยว" (ออกรถตู้สายของตัวเอง)</legend>
+        <div class="field">
+          <input type="checkbox" id="nm${r.id}" name="never_merge" ${r.never_merge ? 'checked' : ''}>
+          <label for="nm${r.id}">วิ่งเดี่ยวเสมอ ไม่ยุบรวมเลย</label>
+          <span class="hint">(ติ๊กเฉพาะสายห้ามรวม เช่น CHP16)</span>
+        </div>
+        <div class="field">
+          <label for="ms${r.id}">เริ่มวิ่งเดี่ยวเมื่อมีคนตั้งแต่</label>
+          <input type="number" id="ms${r.id}" name="min_solo_pax" value="${r.min_solo_pax ?? ''}" placeholder="—" min="1">
+          <label for="ms${r.id}">คน</label>
+          <span class="hint">น้อยกว่านี้ → ยุบเข้ากลุ่มรวมตามที่ตั้งไว้ (ปล่อยว่าง = ไม่ใช้กฎนี้)</span>
+        </div>
+      </fieldset>
+
+      <fieldset><legend>🚌 เปลี่ยนเป็นรถบัสใหญ่ (แทนรถตู้)</legend>
+        <div class="field">
+          <label for="bt${r.id}">ใช้รถบัสใหญ่เมื่อมีคนตั้งแต่</label>
+          <input type="number" id="bt${r.id}" name="bus_threshold" value="${r.bus_threshold ?? ''}" placeholder="—" min="1">
+          <label for="bt${r.id}">คน</label>
+          <span class="hint">ปล่อยว่าง = ไม่เปลี่ยนเป็นรถบัสเลย</span>
+        </div>
+        <div class="field">
+          <label for="br${r.id}">เลือกรถบัสที่จะใช้:</label>
+          <select id="br${r.id}" name="bus_route_id">${routeOpts(allRoutes, r.bus_route_id, true)}</select>
+          <span class="hint">(เลือกเฉพาะถ้าตั้ง threshold ข้างบน)</span>
+        </div>
+      </fieldset>
+
+      <fieldset><legend>🪑 ความจุ</legend>
+        <div class="field">
+          <label for="sc${r.id}">ที่นั่งต่อคันรถตู้:</label>
+          <input type="number" id="sc${r.id}" name="seat_capacity" value="${r.seat_capacity}" min="1">
+          <span class="hint">(รถตู้ปกติ 13, รถบัสใหญ่ปกติ 42 — แก้ที่การ์ดของสายบัสนั้น)</span>
+        </div>
+      </fieldset>
+
+      <div class="rcard-actions"><button>บันทึก</button></div>
+    </form></div>`;
+}
+
 router.get('/routes', async (req, res, next) => {
   try {
     const base = req.baseUrl;
-    const routes = (await pool.query(`SELECT * FROM chp2.route ORDER BY pack_group, code`)).rows;
-    const rows = routes.map(r => `<tr>
-      <td><code>${esc(r.code)}</code></td><td>${esc(r.name)}</td>
-      <td>${r.is_combined ? '<span class="muted">สายรวม</span>' : `
-       <form class="inline" action="${base}/routes/${r.id}" method="post">
-        <label><input type="checkbox" name="never_merge" ${r.never_merge ? 'checked' : ''}> never</label>
-        min <input type="number" name="min_solo_pax" value="${r.min_solo_pax ?? ''}">
-        bus≥ <input type="number" name="bus_threshold" value="${r.bus_threshold ?? ''}">
-        busRoute <select name="bus_route_id">${routeOpts(routes, r.bus_route_id, true)}</select>
-        cap <input type="number" name="seat_capacity" value="${r.seat_capacity}">
-        <button>บันทึก</button></form>`}</td></tr>`).join('');
-    res.render('chp2rules', mk('flag ราย route', base, `<p class="muted">P1=never_merge · P5=bus_threshold(+busRoute) · P7=min_solo_pax · capacity=ที่นั่งต่อคัน</p>
-      <table><tr><th>code</th><th>สาย</th><th>เงื่อนไข</th></tr>${rows}</table>`));
+    routeCard.base = base;
+    const routes = (await pool.query(`
+      SELECT r.id, r.code, r.name, r.pack_group, r.is_combined, r.never_merge,
+             r.min_solo_pax, r.bus_threshold, r.bus_route_id, r.seat_capacity,
+             (SELECT count(*) FROM chp2.route_stop WHERE route_id = r.id) AS stops,
+             (SELECT count(*) FROM chp2.dispatch_rule WHERE route_id = r.id) AS rules,
+             (SELECT string_agg(g.code, ', ' ORDER BY g.code)
+                FROM chp2.merge_group_member m JOIN chp2.merge_group g ON g.id=m.group_id
+                WHERE m.route_id = r.id) AS in_groups
+      FROM chp2.route r
+      ORDER BY r.is_combined, r.pack_group NULLS LAST, r.code`)).rows;
+
+    // split by section: pack_group A, B, then combined
+    const A = routes.filter(r => !r.is_combined && r.pack_group === 'A');
+    const B = routes.filter(r => !r.is_combined && r.pack_group === 'B');
+    const other = routes.filter(r => !r.is_combined && r.pack_group !== 'A' && r.pack_group !== 'B');
+    const combined = routes.filter(r => r.is_combined);
+
+    let body = `<p class="muted">แต่ละสายมีกลุ่มเงื่อนไข 3 ชุด: เมื่อไหร่วิ่งเดี่ยว · เมื่อไหร่ใช้รถบัสใหญ่ · ที่นั่งต่อคัน. สายรวม (CHPxx+yy) สร้างโดย engine — ตั้งจาก /กลุ่มรวม ไม่ใช่ที่นี่</p>`;
+    if (A.length) body += `<div class="pg-head">กลุ่ม A — ${A.length} สาย</div>` + A.map(r => routeCard(r, routes)).join('');
+    if (B.length) body += `<div class="pg-head">กลุ่ม B — ${B.length} สาย</div>` + B.map(r => routeCard(r, routes)).join('');
+    if (other.length) body += `<div class="pg-head">ไม่มี pack_group</div>` + other.map(r => routeCard(r, routes)).join('');
+    if (combined.length) body += `<div class="pg-head">สายรวม (อ่านอย่างเดียว) — ${combined.length} สาย</div>` + combined.map(r => routeCard(r, routes)).join('');
+
+    res.render('chp2rules', mk('flag ราย route', base, body));
   } catch (e) { next(e); }
 });
 router.post('/routes/:id', async (req, res, next) => {
@@ -136,7 +211,7 @@ router.post('/routes/:id', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// ---------- merge groups ----------
+// ---------- merge groups (polished labels + member chips) ----------
 router.get('/groups', async (req, res, next) => {
   try {
     const base = req.baseUrl;
@@ -148,33 +223,78 @@ router.get('/groups', async (req, res, next) => {
     for (const m of members) (memByG.get(m.group_id) || memByG.set(m.group_id, []).get(m.group_id)).push(m);
     const cards = groups.map(g => {
       const mem = memByG.get(g.id) || [];
-      const memHtml = mem.map(m => `${esc(m.code)} <form class="inline" action="${base}/groups/${g.id}/members/${m.route_id}/delete" method="post"><button class="danger" title="ลบ">×</button></form>`).join(' , ') || '<span class="muted">(ยังไม่มี)</span>';
-      return `<div class="card"><b>${esc(g.code)}</b> ${g.is_active ? '' : '<span class="muted">(ปิดใช้)</span>'} ${g.dispatch_only ? '<span class="muted">[dispatch-only]</span>' : ''}
-        <form class="inline" action="${base}/groups/${g.id}" method="post">
-          ชื่อ <input type="text" name="name" value="${esc(g.name)}" style="width:230px">
-          cap <input type="number" name="seat_cap" value="${g.seat_cap}">
-          priority <input type="number" name="priority" value="${g.priority}">
-          result <select name="result_route_id">${routeOpts(routes, g.result_route_id, true)}</select>
-          เฉพาะเวลา <select name="only_slot_id">${slotOpts(slots, g.only_slot_id)}</select>
-          <label><input type="checkbox" name="dispatch_only" ${g.dispatch_only ? 'checked' : ''}> dispatch-only</label>
-          <label><input type="checkbox" name="is_active" ${g.is_active ? 'checked' : ''}> ใช้งาน</label>
-          <button>บันทึก</button>
-        </form>
-        <form class="inline" action="${base}/groups/${g.id}/delete" method="post"><button class="danger">ลบกลุ่ม</button></form>
-        <div style="margin-top:6px">สมาชิก: ${memHtml}
-          <form class="inline" action="${base}/groups/${g.id}/members" method="post">
-            <select name="route_id">${routeOpts(routes, null, false)}</select><button class="sec">+ เพิ่มสาย</button></form>
-        </div></div>`;
+      const memHtml = mem.length
+        ? mem.map(m => `<span class="mchip">${esc(m.code)}
+            <form action="${base}/groups/${g.id}/members/${m.route_id}/delete" method="post"><button title="ลบสายนี้ออกจากกลุ่ม">×</button></form>
+          </span>`).join('')
+        : '<span class="mchip-empty">(ยังไม่มีสมาชิก)</span>';
+      const chips = [];
+      if (!g.is_active) chips.push(`<span class="chip warn">ปิดใช้งาน</span>`);
+      if (g.dispatch_only) chips.push(`<span class="chip">dispatch-only</span>`);
+      if (g.only_slot_id) {
+        const sl = slots.find(s => s.id === g.only_slot_id);
+        if (sl) chips.push(`<span class="chip">เฉพาะ ${esc(BOUND_LABEL[sl.bound] || sl.bound)} ${esc(sl.depart_time)}</span>`);
+      }
+      return `<div class="rcard">
+        <div class="rcard-head">
+          <span class="code">${esc(g.code)}</span><span class="name">${esc(g.name || '')}</span>
+          <div class="rcard-meta">${chips.join('')}</div>
+        </div>
+        <div class="field" style="margin:4px 0 10px">สมาชิก: ${memHtml}
+          <form action="${base}/groups/${g.id}/members" method="post" style="margin-left:6px">
+            <select name="route_id">${routeOpts(routes, null, false)}</select>
+            <button class="sec">+ เพิ่มสาย</button>
+          </form>
+        </div>
+        <form class="rcard-form" action="${base}/groups/${g.id}" method="post">
+          <fieldset><legend>การตั้งค่า</legend>
+            <div class="field"><label for="gn${g.id}">ชื่อกลุ่ม:</label>
+              <input type="text" id="gn${g.id}" name="name" value="${esc(g.name || '')}" placeholder="เช่น รวม CHP01+02+03+04"></div>
+            <div class="field"><label for="gc${g.id}">ที่นั่งต่อคัน:</label>
+              <input type="number" id="gc${g.id}" name="seat_cap" value="${g.seat_cap}" min="1">
+              <span class="hint">(รถตู้รวม 13)</span></div>
+            <div class="field"><label for="gp${g.id}">ลำดับความสำคัญ (priority):</label>
+              <input type="number" id="gp${g.id}" name="priority" value="${g.priority}">
+              <span class="hint">เลขน้อย = ลองรวมกลุ่มนี้ก่อน</span></div>
+            <div class="field"><label for="gr${g.id}">สายผลลัพธ์ (ชื่อรถรวม):</label>
+              <select id="gr${g.id}" name="result_route_id">${routeOpts(routes, g.result_route_id, true)}</select></div>
+            <div class="field"><label for="go${g.id}">เปิดใช้เฉพาะรอบ:</label>
+              <select id="go${g.id}" name="only_slot_id">${slotOpts(slots, g.only_slot_id)}</select>
+              <span class="hint">(ปล่อย "ทุกเวลา" ถ้าใช้ได้ทุกรอบ)</span></div>
+            <div class="field">
+              <input type="checkbox" id="gd${g.id}" name="dispatch_only" ${g.dispatch_only ? 'checked' : ''}>
+              <label for="gd${g.id}">dispatch-only — เฉพาะตอนจัดรถ (ไม่นับเป็นกลุ่มสำหรับกฎจุด)</label></div>
+            <div class="field">
+              <input type="checkbox" id="ga${g.id}" name="is_active" ${g.is_active ? 'checked' : ''}>
+              <label for="ga${g.id}">เปิดใช้งานกลุ่มนี้</label></div>
+          </fieldset>
+          <div class="rcard-actions">
+            <button>บันทึก</button>
+            <button type="submit" class="danger" formaction="${base}/groups/${g.id}/delete"
+              onclick="return confirm('ลบกลุ่ม ${esc(g.code)} ?')">ลบกลุ่ม</button>
+          </div>
+        </form></div>`;
     }).join('');
-    res.render('chp2rules', mk('กลุ่มรวม', base, `${cards}
-      <div class="card"><h3 style="margin-top:0">+ สร้างกลุ่มใหม่</h3>
-       <form action="${base}/groups" method="post">
-        code <input type="text" name="code" required>
-        ชื่อ <input type="text" name="name" style="width:230px">
-        cap <input type="number" name="seat_cap" value="13">
-        priority <input type="number" name="priority" value="20">
-        result <select name="result_route_id">${routeOpts(routes, null, true)}</select>
-        <button>สร้าง</button></form></div>`));
+    res.render('chp2rules', mk('กลุ่มรวม', base, `
+      <p class="muted">แต่ละกลุ่ม = หนึ่งคันรถตู้รวมหลายสายเข้าด้วยกัน. เลือกสมาชิกที่จะรวมเข้ามา และสายผลลัพธ์ (รถที่ผู้โดยสารจะเห็น). สร้างกลุ่มใหม่ที่การ์ดท้ายสุด</p>
+      ${cards}
+      <div class="rcard">
+        <div class="rcard-head"><span class="code">+</span><span class="name">สร้างกลุ่มใหม่</span></div>
+        <form class="rcard-form" action="${base}/groups" method="post">
+          <fieldset><legend>กลุ่มใหม่</legend>
+            <div class="field"><label for="ngc">รหัสกลุ่ม (สั้น):</label>
+              <input type="text" id="ngc" name="code" required placeholder="เช่น H, 11+12"></div>
+            <div class="field"><label for="ngn">ชื่อกลุ่ม:</label>
+              <input type="text" id="ngn" name="name" placeholder="เช่น รวม CHP11+CHP12"></div>
+            <div class="field"><label for="ngcap">ที่นั่งต่อคัน:</label>
+              <input type="number" id="ngcap" name="seat_cap" value="13" min="1"></div>
+            <div class="field"><label for="ngp">priority:</label>
+              <input type="number" id="ngp" name="priority" value="20"></div>
+            <div class="field"><label for="ngr">สายผลลัพธ์:</label>
+              <select id="ngr" name="result_route_id">${routeOpts(routes, null, true)}</select></div>
+          </fieldset>
+          <div class="rcard-actions"><button>สร้าง</button></div>
+        </form></div>`));
   } catch (e) { next(e); }
 });
 router.post('/groups', async (req, res, next) => {
@@ -210,31 +330,72 @@ router.post('/groups/:id/members/:routeId/delete', async (req, res, next) => {
   catch (e) { next(e); }
 });
 
-// ---------- dispatch rules ----------
+// ---------- dispatch rules (polished labels) ----------
 router.get('/rules', async (req, res, next) => {
   try {
     const base = req.baseUrl;
-    const routes = (await pool.query(`SELECT id, code, name FROM chp2.route ORDER BY code`)).rows;
+    const routes = (await pool.query(`SELECT id, code, name FROM chp2.route WHERE NOT is_combined ORDER BY code`)).rows;
     const groups = (await pool.query(`SELECT id, code FROM chp2.merge_group ORDER BY priority`)).rows;
-    const rules = (await pool.query(`SELECT d.*, r.code AS route_code FROM chp2.dispatch_rule d JOIN chp2.route r ON r.id=d.route_id ORDER BY d.priority`)).rows;
-    const rows = rules.map(d => `<tr><form action="${base}/rules/${d.id}" method="post">
-      <td>pri <input type="number" name="priority" value="${d.priority}"></td>
-      <td><select name="route_id">${routeOpts(routes, d.route_id, false)}</select></td>
-      <td><select name="bound">${boundOpts(d.bound)}</select></td>
-      <td>จุด <input type="number" name="solo_stop_from" value="${d.solo_stop_from ?? ''}">-<input type="number" name="solo_stop_to" value="${d.solo_stop_to ?? ''}"></td>
-      <td><select name="else_group_id">${groupOpts(groups, d.else_group_id, true)}</select></td>
-      <td><select name="else_group_alt_id">${groupOpts(groups, d.else_group_alt_id, true)}</select></td>
-      <td><button>บันทึก</button></form>
-        <form class="inline" action="${base}/rules/${d.id}/delete" method="post"><button class="danger">ลบ</button></form></td></tr>`).join('');
-    res.render('chp2rules', mk('กฎจุด/ทิศ', base, `<p class="muted">ถ้ามีคนในช่วงจุด [from..to] (ทิศที่ระบุ) → จัดเอง ; ไม่งั้นยุบเข้า else group (หรือ alt)</p>
-      <table><tr><th>priority</th><th>สาย</th><th>ทิศ</th><th>ช่วงจุด solo</th><th>ยุบเข้า</th><th>หรือ</th><th></th></tr>${rows}</table>
-      <div class="card"><h3 style="margin-top:0">+ เพิ่มกฎ</h3><form action="${base}/rules" method="post">
-        pri <input type="number" name="priority" value="9">
-        สาย <select name="route_id">${routeOpts(routes, null, false)}</select>
-        ทิศ <select name="bound">${boundOpts('')}</select>
-        จุด <input type="number" name="solo_stop_from" value="1">-<input type="number" name="solo_stop_to" value="1">
-        ยุบเข้า <select name="else_group_id">${groupOpts(groups, null, true)}</select>
-        <button>เพิ่ม</button></form></div>`));
+    const rules = (await pool.query(`SELECT d.*, r.code AS route_code, r.name AS route_name
+      FROM chp2.dispatch_rule d JOIN chp2.route r ON r.id=d.route_id ORDER BY d.priority`)).rows;
+    const cards = rules.map(d => `<div class="rcard">
+      <div class="rcard-head">
+        <span class="code">${esc(d.route_code)}</span><span class="name">${esc(d.route_name || '')}</span>
+        <div class="rcard-meta">
+          <span class="chip">priority ${d.priority}</span>
+          <span class="chip">${esc(d.bound ? BOUND_LABEL[d.bound] : 'ทั้งสองทิศ')}</span>
+          ${d.solo_stop_from != null ? `<span class="chip ok">solo ถ้ามีคน stop ${d.solo_stop_from}${d.solo_stop_to != null && d.solo_stop_to !== d.solo_stop_from ? `–${d.solo_stop_to}` : ''}</span>` : ''}
+        </div>
+      </div>
+      <form class="rcard-form" action="${base}/rules/${d.id}" method="post">
+        <fieldset><legend>เงื่อนไข</legend>
+          <div class="field"><label for="rp${d.id}">priority:</label>
+            <input type="number" id="rp${d.id}" name="priority" value="${d.priority}">
+            <span class="hint">เลขน้อย = ลองกฎนี้ก่อน</span></div>
+          <div class="field"><label for="rr${d.id}">สาย:</label>
+            <select id="rr${d.id}" name="route_id">${routeOpts(routes, d.route_id, false)}</select></div>
+          <div class="field"><label for="rb${d.id}">ใช้กับทิศ:</label>
+            <select id="rb${d.id}" name="bound">${boundOpts(d.bound)}</select></div>
+          <div class="field"><label>ช่วงจุดต้นทาง (มีคน stop ในช่วงนี้ → วิ่งเดี่ยว):</label>
+            จุด <input type="number" name="solo_stop_from" value="${d.solo_stop_from ?? ''}" min="1">
+            – <input type="number" name="solo_stop_to" value="${d.solo_stop_to ?? ''}" min="1"></div>
+        </fieldset>
+        <fieldset><legend>ถ้าไม่เข้าเงื่อนไข → ยุบเข้ากลุ่ม</legend>
+          <div class="field"><label for="re${d.id}">กลุ่มหลัก:</label>
+            <select id="re${d.id}" name="else_group_id">${groupOpts(groups, d.else_group_id, true)}</select></div>
+          <div class="field"><label for="ra${d.id}">หรือกลุ่มสำรอง:</label>
+            <select id="ra${d.id}" name="else_group_alt_id">${groupOpts(groups, d.else_group_alt_id, true)}</select>
+            <span class="hint">(ถ้ากลุ่มหลักเต็มแล้ว ใช้กลุ่มนี้แทน)</span></div>
+        </fieldset>
+        <div class="rcard-actions">
+          <button>บันทึก</button>
+          <button type="submit" class="danger" formaction="${base}/rules/${d.id}/delete"
+            onclick="return confirm('ลบกฎนี้?')">ลบ</button>
+        </div>
+      </form></div>`).join('');
+    res.render('chp2rules', mk('กฎจุด/ทิศ', base, `
+      <p class="muted">แต่ละกฎเชื่อมกับสายหนึ่งสาย: ถ้ามีผู้โดยสารอยู่ในช่วงจุดต้นทางที่ระบุ → สายนั้นวิ่งเดี่ยวออกรถตู้สายตัวเอง ถ้าไม่มี → ยุบรวมตามกลุ่มที่เลือก (เลือกกลุ่มสำรองไว้ได้ เผื่อกลุ่มหลักเต็ม)</p>
+      ${cards}
+      <div class="rcard">
+        <div class="rcard-head"><span class="code">+</span><span class="name">เพิ่มกฎใหม่</span></div>
+        <form class="rcard-form" action="${base}/rules" method="post">
+          <fieldset><legend>เงื่อนไข</legend>
+            <div class="field"><label for="np">priority:</label>
+              <input type="number" id="np" name="priority" value="9"></div>
+            <div class="field"><label for="nr">สาย:</label>
+              <select id="nr" name="route_id">${routeOpts(routes, null, false)}</select></div>
+            <div class="field"><label for="nb">ใช้กับทิศ:</label>
+              <select id="nb" name="bound">${boundOpts('')}</select></div>
+            <div class="field"><label>ช่วงจุดต้นทาง (มีคนช่วงนี้ → วิ่งเดี่ยว):</label>
+              จุด <input type="number" name="solo_stop_from" value="1" min="1">
+              – <input type="number" name="solo_stop_to" value="1" min="1"></div>
+          </fieldset>
+          <fieldset><legend>ถ้าไม่เข้าเงื่อนไข → ยุบเข้ากลุ่ม</legend>
+            <div class="field"><label for="neg">กลุ่ม:</label>
+              <select id="neg" name="else_group_id">${groupOpts(groups, null, true)}</select></div>
+          </fieldset>
+          <div class="rcard-actions"><button>เพิ่ม</button></div>
+        </form></div>`));
   } catch (e) { next(e); }
 });
 const ruleParams = (b) => {

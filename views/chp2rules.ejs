@@ -33,6 +33,44 @@
     .chp2-body .muted { color: #6b7b8a; font-size: 13px; }
     .chp2-body form.inline { display: inline; }
     .chp2-body code { background: #eef2f5; padding: 1px 4px; border-radius: 3px; }
+
+    /* ----- route/group/rule cards (level-2 redesign) ----- */
+    .chp2-body .pg-head { font-size: 13px; font-weight: 700; color: #475569; text-transform: uppercase;
+      letter-spacing: .4px; margin: 18px 0 8px; padding: 0 4px; }
+    .chp2-body .pg-head:first-child { margin-top: 0; }
+    .chp2-body .rcard { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px;
+      margin-bottom: 12px; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+    .chp2-body .rcard-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin-bottom: 4px; }
+    .chp2-body .rcard-head .code { font-size: 16px; font-weight: 700; color: #0f4c81; }
+    .chp2-body .rcard-head .name { font-size: 15px; color: #1a2027; }
+    .chp2-body .rcard-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+    .chp2-body .chip { display: inline-flex; align-items: center; gap: 4px;
+      background: #eef2f5; color: #475569; font-size: 12px; font-weight: 600;
+      border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+    .chp2-body .chip.warn { background: #fff7e6; color: #9a6700; }
+    .chp2-body .chip.ok   { background: #e6f4ea; color: #1a7f37; }
+    .chp2-body .chip.bus  { background: #fde6ec; color: #9d174d; }
+    .chp2-body .rcard-form { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 8px; }
+    .chp2-body fieldset { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px 12px; margin: 0; }
+    .chp2-body legend { padding: 0 6px; font-size: 13px; font-weight: 700; color: #475569; }
+    .chp2-body .field { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+    .chp2-body .field label { font-size: 14px; color: #1a2027; cursor: pointer; }
+    .chp2-body .field .hint { color: #6b7b8a; font-size: 12px; margin-left: 4px; }
+    .chp2-body .field input[type=number] { width: 70px; }
+    .chp2-body .field input[type=text] { width: 220px; }
+    .chp2-body .rcard-actions { display: flex; gap: 8px; margin-top: 4px; }
+    .chp2-body .readonly { color: #94a3b8; font-size: 13px; font-style: italic; padding: 4px 0; }
+    .chp2-body details > summary { cursor: pointer; }
+
+    /* member chip on /groups */
+    .chp2-body .mchip { display: inline-flex; align-items: center; gap: 6px;
+      background: #eaf2ff; color: #1d4ed8; border-radius: 999px;
+      padding: 4px 4px 4px 12px; font-size: 13px; font-weight: 600; margin: 2px 4px 2px 0; }
+    .chp2-body .mchip form { display: inline; }
+    .chp2-body .mchip button { background: transparent; color: #1d4ed8; font-size: 14px;
+      padding: 0 6px; border-radius: 999px; }
+    .chp2-body .mchip button:hover { background: rgba(29,78,216,.15); }
+    .chp2-body .mchip-empty { color: #94a3b8; font-size: 13px; font-style: italic; }
   </style>
 </head>
 
