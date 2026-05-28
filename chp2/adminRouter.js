@@ -14,8 +14,13 @@ function bkkYmd(offsetDays = 0) {
   const t = Date.now() + 7 * 3600 * 1000 + offsetDays * 86400 * 1000;
   return new Date(t).toISOString().slice(0, 10);
 }
-function dryrunForm(base, defaultDate) {
+const HALF_OPTS = [['', 'ทั้งวัน'], ['before', 'ก่อน 14:30 (07:30/08:15/10:30)'], ['after', 'หลัง 14:30 (17:15/19:30/20:15)']];
+function halfSelect(name, sel) {
+  return `<select name="${name}">${HALF_OPTS.map(([v, l]) => `<option value="${v}"${v === (sel || '') ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+}
+function dryrunForm(base, defaultDate, half) {
   return `<form action="${esc(base)}/dryrun" method="get">วันที่ <input type="date" name="date" value="${esc(defaultDate)}" required>
+    รอบ ${halfSelect('half', half)}
     <button>ลองจัดดู</button></form>`;
 }
 function layout(title, base, body) {
@@ -270,7 +275,7 @@ async function weekDiagnostics(db, weekOf, dow) {
   return out;
 }
 const BOUND_TH = { inbound: 'ขาเข้า', outbound: 'ขาออก' };
-function renderPlan(base, date, weekOf, dow, plan, committed, diag) {
+function renderPlan(base, date, weekOf, dow, plan, committed, diag, half) {
   const bySlot = new Map();
   for (const b of plan) {
     const k = `${BOUND_TH[b.bound] || b.bound} ${b.depart_time}`;
@@ -278,13 +283,14 @@ function renderPlan(base, date, weekOf, dow, plan, committed, diag) {
   }
   const tag = (k) => k === 'merge' ? '🔗 รวม' : k === 'bus' ? '🚌 บัส' : k === 'solo-fallback' ? 'เดี่ยว*' : 'เดี่ยว';
   let body = committed ? `<div class="card ok">✅ บันทึกแผนวันที่ ${esc(date)} ลง chp2 (stage system) แล้ว</div>` : '';
-  body += `<div class="card">${dryrunForm(base, date)}
-    <p class="muted" style="margin:8px 0 0">week_of=<code>${esc(weekOf)}</code>, day-of-week=${dow}
+  const halfLabel = half === 'before' ? 'ก่อน 14:30' : half === 'after' ? 'หลัง 14:30' : 'ทั้งวัน';
+  body += `<div class="card">${dryrunForm(base, date, half)}
+    <p class="muted" style="margin:8px 0 0">week_of=<code>${esc(weekOf)}</code>, day-of-week=${dow}, รอบ=<b>${esc(halfLabel)}</b>
     ${diag ? ` — booking สัปดาห์นี้: <b class="ok">${diag.approved}</b> approved · <span class="warn">${diag.pending}</span> pending · ${diag.rejected} rejected (มี ride วันนี้รวม: ${diag.withRide})` : ''}
     <br><span class="muted">ℹ️ Dry-run นับทุกการจองที่มี ride วันนี้ (ไม่สนใจสถานะ approve) — commit ก็จะเขียนตามนี้</span></p></div>`;
-  body += `<div class="card">จัดวันที่ <b>${esc(date)}</b> — <b>${plan.length}</b> คัน
+  body += `<div class="card">จัดวันที่ <b>${esc(date)}</b> (${esc(halfLabel)}) — <b>${plan.length}</b> คัน
     ${plan.length ? `<form method="post" action="${base}/commit" style="margin-top:8px">
-       <input type="hidden" name="date" value="${esc(date)}"><button>💾 บันทึกแผนนี้ลง chp2 (stage system)</button></form>` : ''}</div>`;
+       <input type="hidden" name="date" value="${esc(date)}"><input type="hidden" name="half" value="${esc(half || '')}"><button>💾 บันทึกแผนนี้ลง chp2 (stage system)</button></form>` : ''}</div>`;
   if (!plan.length) {
     body += `<p class="warn">ไม่มีคนตั้ง ride วันที่ ${dow} ของ week_of ${esc(weekOf)}`;
     if (diag && diag.approved + diag.pending + diag.rejected === 0)
@@ -310,23 +316,27 @@ function renderPlan(base, date, weekOf, dow, plan, committed, diag) {
   }
   return body;
 }
+function parseHalf(v) { return v === 'before' || v === 'after' ? v : 'all'; }
 router.get('/dryrun', async (req, res, next) => {
   try {
     const base = req.baseUrl, date = String(req.query.date || '');
+    const half = parseHalf(req.query.half);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
-      return res.render('chp2rules', mk('ลองจัดดู', base, `<div class="card">${dryrunForm(base, bkkYmd(1))}</div>`));
-    const { weekOf, dow, plan } = await planDate(pool, date, { allApprovals: true });
+      return res.render('chp2rules', mk('ลองจัดดู', base, `<div class="card">${dryrunForm(base, bkkYmd(1), half)}</div>`));
+    const { weekOf, dow, plan } = await planDate(pool, date, { allApprovals: true, half });
     const diag = await weekDiagnostics(pool, weekOf, dow);
-    res.render('chp2rules', mk('ลองจัดดู', base, renderPlan(base, date, weekOf, dow, plan, req.query.committed === '1', diag)));
+    res.render('chp2rules', mk('ลองจัดดู', base, renderPlan(base, date, weekOf, dow, plan, req.query.committed === '1', diag, half)));
   } catch (e) { next(e); }
 });
 router.post('/commit', async (req, res, next) => {
   try {
     const date = String(req.body.date || '');
+    const half = parseHalf(req.body.half);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.redirect(req.baseUrl + '/dryrun');
-    const { plan } = await planDate(pool, date, { allApprovals: true });
+    const { plan } = await planDate(pool, date, { allApprovals: true, half });
     await commitPlan(pool, date, plan, 'system');
-    res.redirect(`${req.baseUrl}/dryrun?date=${date}&committed=1`);
+    const qs = `date=${date}&committed=1${half !== 'all' ? `&half=${half}` : ''}`;
+    res.redirect(`${req.baseUrl}/dryrun?${qs}`);
   } catch (e) { next(e); }
 });
 

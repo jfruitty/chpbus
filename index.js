@@ -1999,13 +1999,20 @@ async function runDaily() {
   await chpAutoApprove();
   await chpClearDriverState();
 
-  // chp2 engine: จัดทั้งวัน (ทุก slot) แล้วเขียนผลรูปแบบเดิมลง chp.driver/seatdriver
-  // ไม่ต้อง rollover (booking ใช้ week_of) — engine อ่าน booking ของวันนั้นตาม week_of เอง
-  //   ศุกร์: จัด ศ/ส/อา/จ (0..3) ; วันอื่น: วันนี้+พรุ่งนี้ (0..1)
-  const spans = (dayOfWeek === 5) ? [0, 1, 2, 3] : [0, 1];
-  const dates = spans.map((n) => bangkokDateISO(n));
-  for (const d of dates) {
-    const { plan } = await chp2Pack.planDate(pool, d);
+  // chp2 engine: จัดเป็นช่วง 14:30→14:30 (BKK) ไม่ใช่ทั้งวัน
+  //   จ.-พฤ. 14:30: pack วันนี้-after + พรุ่งนี้-before
+  //   ศ. 14:30:  pack ศ-after + ส-เต็มวัน + อา-เต็มวัน + จ-before
+  //   half: 'before' = slot ก่อน 14:30 (07:30/08:15/10:30)
+  //         'after'  = slot ตั้งแต่ 14:30 (17:15/19:30/20:15)
+  //         'all'    = ทั้งวัน (ใช้กับ ส./อา. ในรอบศุกร์)
+  const segs = (dayOfWeek === 5)
+    ? [{ d: 0, half: 'after' }, { d: 1, half: 'all' }, { d: 2, half: 'all' }, { d: 3, half: 'before' }]
+    : [{ d: 0, half: 'after' }, { d: 1, half: 'before' }];
+  const dates = [];
+  for (const seg of segs) {
+    const d = bangkokDateISO(seg.d);
+    dates.push(`${d}(${seg.half})`);
+    const { plan } = await chp2Pack.planDate(pool, d, { half: seg.half });
     await chp2Pack.commitToChp(pool, d, plan);
   }
 

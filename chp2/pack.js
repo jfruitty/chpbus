@@ -29,11 +29,20 @@ function mondayOf(d) {
   return m;
 }
 
+// half = 'before' (slots < 14:30: 07:30/08:15/10:30) | 'after' (slots >= 14:30: 17:15/19:30/20:15) | 'all'
+// /daliy แบ่งงานรายวันที่ 14:30 BKK: รันวันนี้ -> pack วันนี้-after + พรุ่งนี้-before (ศุกร์ครอบ ศ-after..จ-before)
+const HALF_CUTOFF = '14:30';
+function halfFilter(half) {
+  if (half === 'before') return `AND br.depart_time < '${HALF_CUTOFF}'::time`;
+  if (half === 'after')  return `AND br.depart_time >= '${HALF_CUTOFF}'::time`;
+  return '';
+}
 async function loadPassengers(db, serviceDateStr, opts = {}) {
   const d = new Date(serviceDateStr + 'T00:00:00Z');
   const weekOf = ymd(mondayOf(d));
   const dow = isoDow(d);
   const approvalFilter = opts.allApprovals ? '' : `AND b.dept_approval = 'approved'`;
+  const slotFilter = halfFilter(opts.half);
   const { rows } = await db.query(`
     SELECT e.id AS employee_id, e.line_user_id, e.per_id, e.first_name, e.last_name,
            rs.route_id, rs.seq AS stop_seq, rs.id AS stop_id, rs.name AS stop_name,
@@ -44,7 +53,7 @@ async function loadPassengers(db, serviceDateStr, opts = {}) {
     JOIN chp2.employee e      ON e.id = b.employee_id
     JOIN chp2.route_stop rs   ON rs.id = b.pickup_stop_id
     LEFT JOIN chp2.route hr   ON hr.id = rs.route_id
-    WHERE b.week_of = $1 AND br.day_of_week = $2 ${approvalFilter}
+    WHERE b.week_of = $1 AND br.day_of_week = $2 ${approvalFilter} ${slotFilter}
   `, [weekOf, dow]);
   return { rows, weekOf, dow };
 }
