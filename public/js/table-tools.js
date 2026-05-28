@@ -33,6 +33,14 @@
       if (el.value) el.value = '';
     });
 
+    // Neutralize the legacy pagination on /member, /thisweekdashboard, /nextweekdashboard:
+    // their member.js / dashboard.js hide rows past page 1 with inline display='none',
+    // which leaks through .tt-hide removal (a match on page 10 would stay hidden).
+    document.querySelectorAll('.pagination').forEach(function (el) { el.style.display = 'none'; });
+    Array.prototype.slice.call(tbody.rows).forEach(function (r) {
+      if (r.style.display === 'none') r.style.display = '';
+    });
+
     var search = document.createElement('input');
     search.type = 'text';
     search.className = 'tt-search';
@@ -94,6 +102,7 @@
         r.classList.toggle('tt-hide', !show);
         if (show) {
           n++;
+          if (r.style.display === 'none') r.style.display = '';
           if (firstIsIndex && r.cells[0] && !isActionCell(r.cells[0])) {
             r.cells[0].textContent = n;
           }

@@ -9,6 +9,15 @@ const { planDate, commitPlan } = require('./pack');
 const router = express.Router();
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// today / tomorrow in BKK as YYYY-MM-DD — used as the default date in the dry-run picker
+function bkkYmd(offsetDays = 0) {
+  const t = Date.now() + 7 * 3600 * 1000 + offsetDays * 86400 * 1000;
+  return new Date(t).toISOString().slice(0, 10);
+}
+function dryrunForm(base, defaultDate) {
+  return `<form action="${esc(base)}/dryrun" method="get">วันที่ <input type="date" name="date" value="${esc(defaultDate)}" required>
+    <button>ลองจัดดู</button></form>`;
+}
 function layout(title, base, body) {
   return `<!doctype html><html lang="th"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -88,8 +97,7 @@ router.get('/', async (req, res, next) => {
       <div class="card"><b>สรุป:</b> ${counts.routes} สาย · ${counts.groups} กลุ่มรวม · ${counts.rules} กฎจุด/ทิศ</div>
       <div class="card"><h3 style="margin-top:0">ตรวจความถูกต้อง (validation)</h3>${issuesHtml}</div>
       <div class="card"><h3 style="margin-top:0">ลองจัดดูก่อนใช้จริง</h3>
-        <form action="${base}/dryrun" method="get">วันที่ <input type="text" name="date" placeholder="YYYY-MM-DD" required>
-        <button>ลองจัดดู</button></form>
+        ${dryrunForm(base, bkkYmd(1))}
         <p class="muted">อ่านการจองจาก chp2.booking ของวันนั้น แล้วลองจัดตามกฎปัจจุบัน (ไม่เขียน DB)</p></div>`));
   } catch (e) { next(e); }
 });
@@ -247,15 +255,40 @@ router.post('/rules/:id/delete', async (req, res, next) => {
 });
 
 // ---------- dry-run + commit ----------
-function renderPlan(base, date, weekOf, dow, plan, committed) {
+// นับ booking ใน chp2.booking ของสัปดาห์ + วันนั้น เพื่อบอก user ตอนที่ plan ว่าง
+async function weekDiagnostics(db, weekOf, dow) {
+  const r = await db.query(`SELECT b.dept_approval,
+       count(*) FILTER (WHERE EXISTS (SELECT 1 FROM chp2.booking_ride br WHERE br.booking_id=b.id AND br.day_of_week=$2)) AS with_ride,
+       count(*) AS total
+     FROM chp2.booking b WHERE b.week_of=$1 GROUP BY b.dept_approval`, [weekOf, dow]);
+  const out = { approved: 0, pending: 0, rejected: 0, approvedWithRide: 0 };
+  for (const x of r.rows) {
+    out[x.dept_approval] = Number(x.total);
+    if (x.dept_approval === 'approved') out.approvedWithRide = Number(x.with_ride);
+  }
+  return out;
+}
+function renderPlan(base, date, weekOf, dow, plan, committed, diag) {
   const bySlot = new Map();
   for (const b of plan) { const k = `${b.bound} ${b.depart_time}`; (bySlot.get(k) || bySlot.set(k, []).get(k)).push(b); }
   const tag = (k) => k === 'merge' ? '🔗 รวม' : k === 'bus' ? '🚌 บัส' : k === 'solo-fallback' ? 'เดี่ยว*' : 'เดี่ยว';
   let body = committed ? `<div class="card ok">✅ บันทึกแผนวันที่ ${esc(date)} ลง chp2 (stage system) แล้ว</div>` : '';
-  body += `<div class="card">จัดวันที่ <b>${esc(date)}</b> (week_of=${esc(weekOf)}, day-of-week=${dow}) — <b>${plan.length}</b> คัน
+  body += `<div class="card">${dryrunForm(base, date)}
+    <p class="muted" style="margin:8px 0 0">week_of=<code>${esc(weekOf)}</code>, day-of-week=${dow}
+    ${diag ? ` — booking สัปดาห์นี้: <b class="ok">${diag.approved}</b> approved · <span class="warn">${diag.pending}</span> pending · ${diag.rejected} rejected (มี ride วันนี้: ${diag.approvedWithRide})` : ''}</p></div>`;
+  body += `<div class="card">จัดวันที่ <b>${esc(date)}</b> — <b>${plan.length}</b> คัน
     ${plan.length ? `<form method="post" action="${base}/commit" style="margin-top:8px">
        <input type="hidden" name="date" value="${esc(date)}"><button>💾 บันทึกแผนนี้ลง chp2 (stage system)</button></form>` : ''}</div>`;
-  if (!plan.length) body += `<p class="warn">ไม่มีผู้โดยสารอนุมัติแล้วในวันนี้</p>`;
+  if (!plan.length) {
+    body += `<p class="warn">ไม่มีผู้โดยสารอนุมัติแล้ว (+มี ride วันนี้) ใน week_of ${esc(weekOf)}`;
+    if (diag && diag.pending > 0 && diag.approved === 0)
+      body += ` — มี ${diag.pending} จองรอ approve อยู่ ลอง approve ที่ <a href="/thisweekdashboard">/thisweekdashboard</a> หรือ <a href="/hrnextweek">/hrnextweek</a> ก่อน`;
+    else if (diag && diag.approved > 0 && diag.approvedWithRide === 0)
+      body += ` — มี approved ${diag.approved} แต่ไม่มีคนตั้ง ride วันที่ ${dow} ของสัปดาห์`;
+    else if (diag && diag.approved + diag.pending + diag.rejected === 0)
+      body += ` — สัปดาห์นี้ยังไม่มีจองเลย ลองเลือกวันที่ของสัปดาห์อื่น`;
+    body += `</p>`;
+  }
   for (const [slot, buses] of bySlot) {
     body += `<h3>${esc(slot)}</h3><table><tr><th>สาย</th><th>ชนิด</th><th>คันที่</th><th>ที่นั่ง</th></tr>` +
       buses.map(b => `<tr><td><code>${esc(b.route_code)}</code></td><td>${tag(b.kind)}</td><td>${b.bus_number}</td><td>${b.seats.length}/${b.capacity}</td></tr>`).join('') + `</table>`;
@@ -266,9 +299,10 @@ router.get('/dryrun', async (req, res, next) => {
   try {
     const base = req.baseUrl, date = String(req.query.date || '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
-      return res.render('chp2rules', mk('ลองจัดดู', base, `<div class="card"><form action="${base}/dryrun" method="get">วันที่ <input type="text" name="date" placeholder="YYYY-MM-DD" required><button>ลองจัดดู</button></form></div>`));
+      return res.render('chp2rules', mk('ลองจัดดู', base, `<div class="card">${dryrunForm(base, bkkYmd(1))}</div>`));
     const { weekOf, dow, plan } = await planDate(pool, date);
-    res.render('chp2rules', mk('ลองจัดดู', base, renderPlan(base, date, weekOf, dow, plan, req.query.committed === '1')));
+    const diag = await weekDiagnostics(pool, weekOf, dow);
+    res.render('chp2rules', mk('ลองจัดดู', base, renderPlan(base, date, weekOf, dow, plan, req.query.committed === '1', diag)));
   } catch (e) { next(e); }
 });
 router.post('/commit', async (req, res, next) => {
