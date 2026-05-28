@@ -256,15 +256,16 @@ router.post('/rules/:id/delete', async (req, res, next) => {
 
 // ---------- dry-run + commit ----------
 // นับ booking ใน chp2.booking ของสัปดาห์ + วันนั้น เพื่อบอก user ตอนที่ plan ว่าง
+// with_ride = นับเฉพาะที่มี booking_ride วันนั้น (ทุก approval status)
 async function weekDiagnostics(db, weekOf, dow) {
   const r = await db.query(`SELECT b.dept_approval,
        count(*) FILTER (WHERE EXISTS (SELECT 1 FROM chp2.booking_ride br WHERE br.booking_id=b.id AND br.day_of_week=$2)) AS with_ride,
        count(*) AS total
      FROM chp2.booking b WHERE b.week_of=$1 GROUP BY b.dept_approval`, [weekOf, dow]);
-  const out = { approved: 0, pending: 0, rejected: 0, approvedWithRide: 0 };
+  const out = { approved: 0, pending: 0, rejected: 0, withRide: 0 };
   for (const x of r.rows) {
-    out[x.dept_approval] = Number(x.total);
-    if (x.dept_approval === 'approved') out.approvedWithRide = Number(x.with_ride);
+    if (x.dept_approval in out) out[x.dept_approval] = Number(x.total);
+    out.withRide += Number(x.with_ride);
   }
   return out;
 }
@@ -275,17 +276,14 @@ function renderPlan(base, date, weekOf, dow, plan, committed, diag) {
   let body = committed ? `<div class="card ok">✅ บันทึกแผนวันที่ ${esc(date)} ลง chp2 (stage system) แล้ว</div>` : '';
   body += `<div class="card">${dryrunForm(base, date)}
     <p class="muted" style="margin:8px 0 0">week_of=<code>${esc(weekOf)}</code>, day-of-week=${dow}
-    ${diag ? ` — booking สัปดาห์นี้: <b class="ok">${diag.approved}</b> approved · <span class="warn">${diag.pending}</span> pending · ${diag.rejected} rejected (มี ride วันนี้: ${diag.approvedWithRide})` : ''}</p></div>`;
+    ${diag ? ` — booking สัปดาห์นี้: <b class="ok">${diag.approved}</b> approved · <span class="warn">${diag.pending}</span> pending · ${diag.rejected} rejected (มี ride วันนี้รวม: ${diag.withRide})` : ''}
+    <br><span class="muted">ℹ️ Dry-run นับทุกการจองที่มี ride วันนี้ (ไม่สนใจสถานะ approve) — commit ก็จะเขียนตามนี้</span></p></div>`;
   body += `<div class="card">จัดวันที่ <b>${esc(date)}</b> — <b>${plan.length}</b> คัน
     ${plan.length ? `<form method="post" action="${base}/commit" style="margin-top:8px">
        <input type="hidden" name="date" value="${esc(date)}"><button>💾 บันทึกแผนนี้ลง chp2 (stage system)</button></form>` : ''}</div>`;
   if (!plan.length) {
-    body += `<p class="warn">ไม่มีผู้โดยสารอนุมัติแล้ว (+มี ride วันนี้) ใน week_of ${esc(weekOf)}`;
-    if (diag && diag.pending > 0 && diag.approved === 0)
-      body += ` — มี ${diag.pending} จองรอ approve อยู่ ลอง approve ที่ <a href="/thisweekdashboard">/thisweekdashboard</a> หรือ <a href="/hrnextweek">/hrnextweek</a> ก่อน`;
-    else if (diag && diag.approved > 0 && diag.approvedWithRide === 0)
-      body += ` — มี approved ${diag.approved} แต่ไม่มีคนตั้ง ride วันที่ ${dow} ของสัปดาห์`;
-    else if (diag && diag.approved + diag.pending + diag.rejected === 0)
+    body += `<p class="warn">ไม่มีคนตั้ง ride วันที่ ${dow} ของ week_of ${esc(weekOf)}`;
+    if (diag && diag.approved + diag.pending + diag.rejected === 0)
       body += ` — สัปดาห์นี้ยังไม่มีจองเลย ลองเลือกวันที่ของสัปดาห์อื่น`;
     body += `</p>`;
   }
@@ -300,7 +298,7 @@ router.get('/dryrun', async (req, res, next) => {
     const base = req.baseUrl, date = String(req.query.date || '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
       return res.render('chp2rules', mk('ลองจัดดู', base, `<div class="card">${dryrunForm(base, bkkYmd(1))}</div>`));
-    const { weekOf, dow, plan } = await planDate(pool, date);
+    const { weekOf, dow, plan } = await planDate(pool, date, { allApprovals: true });
     const diag = await weekDiagnostics(pool, weekOf, dow);
     res.render('chp2rules', mk('ลองจัดดู', base, renderPlan(base, date, weekOf, dow, plan, req.query.committed === '1', diag)));
   } catch (e) { next(e); }
@@ -309,7 +307,7 @@ router.post('/commit', async (req, res, next) => {
   try {
     const date = String(req.body.date || '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.redirect(req.baseUrl + '/dryrun');
-    const { plan } = await planDate(pool, date);
+    const { plan } = await planDate(pool, date, { allApprovals: true });
     await commitPlan(pool, date, plan, 'system');
     res.redirect(`${req.baseUrl}/dryrun?date=${date}&committed=1`);
   } catch (e) { next(e); }

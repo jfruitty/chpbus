@@ -29,10 +29,11 @@ function mondayOf(d) {
   return m;
 }
 
-async function loadPassengers(db, serviceDateStr) {
+async function loadPassengers(db, serviceDateStr, opts = {}) {
   const d = new Date(serviceDateStr + 'T00:00:00Z');
   const weekOf = ymd(mondayOf(d));
   const dow = isoDow(d);
+  const approvalFilter = opts.allApprovals ? '' : `AND b.dept_approval = 'approved'`;
   const { rows } = await db.query(`
     SELECT e.id AS employee_id, e.line_user_id, e.per_id, e.first_name, e.last_name,
            rs.route_id, rs.seq AS stop_seq, rs.id AS stop_id, rs.name AS stop_name,
@@ -43,7 +44,7 @@ async function loadPassengers(db, serviceDateStr) {
     JOIN chp2.employee e      ON e.id = b.employee_id
     JOIN chp2.route_stop rs   ON rs.id = b.pickup_stop_id
     LEFT JOIN chp2.route hr   ON hr.id = rs.route_id
-    WHERE b.week_of = $1 AND b.dept_approval = 'approved' AND br.day_of_week = $2
+    WHERE b.week_of = $1 AND br.day_of_week = $2 ${approvalFilter}
   `, [weekOf, dow]);
   return { rows, weekOf, dow };
 }
@@ -150,9 +151,9 @@ function assignSeats(vehicle) {
 }
 
 // วางแผนทั้งวัน (ไม่เขียน DB) -> โครงสร้างไว้พิมพ์/เขียนต่อ
-async function planDate(db, serviceDate) {
+async function planDate(db, serviceDate, opts = {}) {
   const rules = await loadRules(db);
-  const { rows, weekOf, dow } = await loadPassengers(db, serviceDate);
+  const { rows, weekOf, dow } = await loadPassengers(db, serviceDate, opts);
 
   // group ผู้โดยสารตาม slot (bound|เวลา)
   const slots = new Map();
