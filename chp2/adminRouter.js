@@ -121,8 +121,6 @@ function routeCard(r, base) {
         <button>บันทึกชื่อ</button>
         <a href="${base}/routes/${r.id}/stops" class="chip"
            style="background:#eaf2ff;color:#1d4ed8;text-decoration:none">📍 จัดการจุด</a>
-        <button type="submit" class="danger" formaction="${base}/routes/${r.id}/delete"
-          onclick="return confirm('ลบสาย ${esc(r.code).replace(/'/g, "\\'")} ? จุดทั้งหมดของสายนี้จะถูกลบด้วย')">ลบสาย</button>
       </div>
     </form></div>`;
 }
