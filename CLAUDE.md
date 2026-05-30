@@ -95,7 +95,7 @@ chpbus/
 
 ### Migration ตอน startup
 
-`chpEnsureSchema()` ([index.js:31-61](index.js#L31-L61)) รันทุกครั้งที่บูต เป็นแบบ additive ล้วน (`CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`) ปลอดภัย ไม่แตะข้อมูลเดิม — สร้าง `hrnextweek`, `change_log` และเพิ่ม column `service_date`
+`chpEnsureSchema()` รันทุกครั้งที่บูต เป็นแบบ additive ล้วน (`CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`) ปลอดภัย ไม่แตะข้อมูลเดิม — สร้าง `hrnextweek`, `change_log`, `error_log` และเพิ่ม column `service_date`
 
 ### วงจรข้อมูลรายสัปดาห์ (ส่วนที่ต้องเข้าใจให้ขึ้นใจ)
 
@@ -166,7 +166,16 @@ endpoint `GET /download-csv-*` และ `/download-excel-*` ใช้ `csv-writ
 
 ### Audit log
 
-`chpLog(actor, action, rowId, detail)` ([index.js:90](index.js#L90)) เขียน `change_log` (ไม่มีวัน throw) มี middleware ([index.js:105-117](index.js#L105-L117)) บันทึก POST ที่แก้ข้อมูลทุกตัวที่สำเร็จ (status < 400) อัตโนมัติ ดูผ่าน `GET /changelogjson`
+`chpLog(actor, action, rowId, detail)` เขียน `change_log` (ไม่มีวัน throw) มี middleware บันทึก POST ที่แก้ข้อมูลทุกตัวที่สำเร็จ (status < 400) อัตโนมัติ ดูผ่าน `GET /changelogjson`
+- `detail` เก็บเป็น **`{ before, after }`**: `after` = body ที่ส่งมา; สำหรับ `edit`/`remove` middleware จะ `SELECT *` แถวนั้น **ก่อน** handler แก้ (ตาม map `CHP_LOG_TABLE`) มาใส่ `before` เพื่อให้หน้า log โชว์ diff old → new ได้
+- การแปลงให้อ่านง่ายอยู่ **ฝั่ง client** ([public/js/changelog.js](public/js/changelog.js)): `formatDetail()` + `canonFields()` normalize ชื่อ field ทั้งฝั่ง DB (`per_id`/`busnumber`/`seat`) และฝั่ง form (`perid`/`bus_number`/`seat_number`) เป็น label ไทย, แปลงวัน/รอบเป็นไทย, insert โชว์ค่าทั้งหมด / edit โชว์เฉพาะ field ที่เปลี่ยน (`เดิม → ใหม่`) / remove สรุปแถวที่ลบ. รองรับ row เก่าที่ detail เป็น body ดิบ (ไม่มี wrapper) ด้วย
+
+### System error log (ภายใน — ไม่โชว์ให้ user)
+
+ตาราง `chp.error_log` (สร้างใน `chpEnsureSchema`) เก็บ error ของระบบไว้ debug — **ไม่มี endpoint/หน้าใดอ่านมาแสดง** ดูได้จาก DB ตรง ๆ เท่านั้น
+- `console.error` ถูก**ห่อทับตอน startup** ([index.js](index.js) ใต้ pool): ทุก `console.error('... failed:', err)` ที่มีอยู่แล้วทั้งแอปจะถูกเขียนลง `error_log` อัตโนมัติ (ไม่ต้องแก้ handler ทีละตัว) — เก็บ `message` + `stack`
+- request ที่กำลังทำงานถูกพกผ่าน **AsyncLocalStorage** (`chpReqContext`, middleware หลัง body parser) → `logSystemError` แนบ `source`(path)/`method`/`context`(body) ของ request นั้นให้ row เดียวกัน เลย debug 500 ได้โดยไม่ต้อง reproduce (เช่นเคส per_id ยาวเกิน varchar(20))
+- best-effort ล้วน: `logSystemError` กลืน error ตัวเอง (ไม่เรียก `console.error` ซ้ำ) จึงไม่ recurse และไม่ทำ action พัง; `process.on('unhandledRejection')` ดักพวกที่หลุดนอก request (cron) ด้วย
 
 ## ข้อตกลง / จุดที่ต้องระวังเวลาแก้
 
