@@ -92,24 +92,9 @@
     <main class="main-content">
       <header class="header">
         <div class="user-info">
-          <h1 class="page-title" style="margin:0;font-size:20px;">เงื่อนไขจัดรถ (RMT)</h1>
+          <h1 class="page-title" style="margin:0;font-size:20px;">จัดการสายและจุดรับ-ส่ง</h1>
         </div>
       </header>
-      <%
-        var _sub = [
-          ['/', 'หน้าหลัก'], ['/routes', 'flag ราย route'], ['/groups', 'กลุ่มรวม'],
-          ['/rules', 'กฎจุด/ทิศ'], ['/dryrun', 'ลองจัดดู'],
-        ];
-        var _cp = (typeof currentPath !== 'undefined' && currentPath) ? currentPath : '';
-      %>
-      <nav class="chp2-subnav">
-        <% _sub.forEach(function (s) {
-             var href = base + s[0];
-             var isAct = (s[0] === '/') ? (_cp === base || _cp === base + '/') : (_cp.indexOf(base + s[0]) === 0);
-        %>
-        <a href="<%= href %>"<%- isAct ? ' class="active"' : '' %>><%= s[1] %></a>
-        <% }); %>
-      </nav>
       <div class="chp2-body"><%- bodyHtml %></div>
     </main>
   </div>

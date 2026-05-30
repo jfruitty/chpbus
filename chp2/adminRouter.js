@@ -88,107 +88,42 @@ async function validate(db) {
 }
 
 // ---------- home ----------
-router.get('/', async (req, res, next) => {
-  try {
-    const base = req.baseUrl;
-    const issues = await validate(pool);
-    const counts = (await pool.query(`SELECT
-       (SELECT count(*) FROM chp2.route) routes,
-       (SELECT count(*) FROM chp2.merge_group) groups,
-       (SELECT count(*) FROM chp2.dispatch_rule) rules`)).rows[0];
-    const issuesHtml = issues.length
-      ? `<ul>${issues.map(i => `<li class="${i.level === 'error' ? 'err' : 'warn'}">[${i.level}] ${esc(i.msg)}</li>`).join('')}</ul>`
-      : `<p class="ok">✓ ไม่พบปัญหา</p>`;
-    res.render('chp2rules', mk('หน้าหลัก', base, `
-      <div class="card"><b>สรุป:</b> ${counts.routes} สาย · ${counts.groups} กลุ่มรวม · ${counts.rules} กฎจุด/ทิศ</div>
-      <div class="card"><h3 style="margin-top:0">ตรวจความถูกต้อง (validation)</h3>${issuesHtml}</div>
-      <div class="card"><h3 style="margin-top:0">ลองจัดดูก่อนใช้จริง</h3>
-        ${dryrunForm(base, bkkYmd(1))}
-        <p class="muted">อ่านการจองจาก chp2.booking ของวันนั้น แล้วลองจัดตามกฎปัจจุบัน (ไม่เขียน DB)</p></div>`));
-  } catch (e) { next(e); }
-});
+// Simplified tool: the landing page is just the route/stop manager.
+// (The advanced engine pages — groups / rules / dryrun — are kept below and are
+//  still reachable by URL, but are no longer linked in the navigation.)
+router.get('/', (req, res) => res.redirect(req.baseUrl + '/routes'));
 
 // ---------- route flags (card layout, level-2 redesign) ----------
 const PG_OPTS = (sel) => ['A', 'B'].map(g => `<option value="${g}"${g === sel ? ' selected' : ''}>${g}</option>`).join('');
-function routeCard(r, allRoutes) {
-  // chip row: stops · merge groups it joins · # dispatch rules
-  const chips = [];
-  chips.push(`<span class="chip">${r.stops} จุด</span>`);
-  if (r.in_groups) chips.push(`<span class="chip">กลุ่มรวม: ${esc(r.in_groups)}</span>`);
-  if (Number(r.rules) > 0) chips.push(`<span class="chip">กฎจุด ${r.rules} ข้อ</span>`);
-  if (r.never_merge) chips.push(`<span class="chip warn">วิ่งเดี่ยวเสมอ</span>`);
-  if (r.bus_threshold != null) chips.push(`<span class="chip bus">บัสเมื่อ ≥${r.bus_threshold}</span>`);
+function routeCard(r, base) {
+  const stopList = r.stop_names
+    ? esc(r.stop_names)
+    : '<span class="muted">(ยังไม่มีจุด — กด "จัดการจุด" เพื่อเพิ่ม)</span>';
 
-  const head = `<div class="rcard-head">
-    <span class="code">${esc(r.code)}</span><span class="name">${esc(r.name)}</span>
-    <div class="rcard-meta">${chips.join('')}</div>
-  </div>`;
-
-  if (r.is_combined) {
-    return `<div class="rcard">${head}
-      <div class="readonly">สายรวม — สร้างโดย engine ตอน merge group ทำงาน ไม่ต้องตั้งเงื่อนไข</div></div>`;
-  }
-
-  const base = routeCard.base;
-  const stopsLink = `<a href="${base}/routes/${r.id}/stops" class="chip" style="background:#eaf2ff;color:#1d4ed8;text-decoration:none">📍 จัดการจุด (${r.stops})</a>`;
-
-  // Editable card for sub-routes.
-  return `<div class="rcard">${head}
-
+  // One compact card per route: edit code/name, see its stops, manage stops,
+  // delete the route. No engine flags here (kept on the hidden /routes/:id form).
+  return `<div class="rcard">
+    <div class="rcard-head">
+      <span class="code">${esc(r.code)}</span><span class="name">${esc(r.name)}</span>
+      <div class="rcard-meta"><span class="chip">${r.stops} จุด</span></div>
+    </div>
+    <div class="field" style="margin:2px 0 8px">
+      <span class="muted">จุดรับ-ส่ง (ตามลำดับ):</span> ${stopList}
+    </div>
     <form class="rcard-form" action="${base}/routes/${r.id}/info" method="post">
-      <fieldset><legend>ข้อมูลสาย</legend>
-        <div class="field"><label for="rc${r.id}">รหัส:</label>
-          <input type="text" id="rc${r.id}" name="code" value="${esc(r.code)}" required></div>
-        <div class="field"><label for="rn${r.id}">ชื่อสาย (ภาษาไทย):</label>
-          <input type="text" id="rn${r.id}" name="name" value="${esc(r.name)}" required></div>
-        <div class="field"><label for="rg${r.id}">กลุ่ม pack:</label>
-          <select id="rg${r.id}" name="pack_group">${PG_OPTS(r.pack_group)}</select>
-          <span class="hint">A = CHP01-10 (ส่วนใหญ่), B = CHP11-16 (ลาดบัวขาว + ตะวันออก)</span></div>
-        <div class="rcard-actions">
-          <button>บันทึก ข้อมูลสาย</button>
-          ${stopsLink}
-        </div>
-      </fieldset>
-    </form>
-
-    <form class="rcard-form" action="${base}/routes/${r.id}" method="post">
-      <fieldset><legend>⚙️ เมื่อไหร่ "วิ่งเดี่ยว" (ออกรถตู้สายของตัวเอง)</legend>
-        <div class="field">
-          <input type="checkbox" id="nm${r.id}" name="never_merge" ${r.never_merge ? 'checked' : ''}>
-          <label for="nm${r.id}">วิ่งเดี่ยวเสมอ ไม่ยุบรวมเลย</label>
-          <span class="hint">(ติ๊กเฉพาะสายห้ามรวม เช่น CHP16)</span>
-        </div>
-        <div class="field">
-          <label for="ms${r.id}">เริ่มวิ่งเดี่ยวเมื่อมีคนตั้งแต่</label>
-          <input type="number" id="ms${r.id}" name="min_solo_pax" value="${r.min_solo_pax ?? ''}" placeholder="—" min="1">
-          <label for="ms${r.id}">คน</label>
-          <span class="hint">น้อยกว่านี้ → ยุบเข้ากลุ่มรวมตามที่ตั้งไว้ (ปล่อยว่าง = ไม่ใช้กฎนี้)</span>
-        </div>
-      </fieldset>
-
-      <fieldset><legend>🚌 เปลี่ยนเป็นรถบัสใหญ่ (แทนรถตู้)</legend>
-        <div class="field">
-          <label for="bt${r.id}">ใช้รถบัสใหญ่เมื่อมีคนตั้งแต่</label>
-          <input type="number" id="bt${r.id}" name="bus_threshold" value="${r.bus_threshold ?? ''}" placeholder="—" min="1">
-          <label for="bt${r.id}">คน</label>
-          <span class="hint">ปล่อยว่าง = ไม่เปลี่ยนเป็นรถบัสเลย</span>
-        </div>
-        <div class="field">
-          <label for="br${r.id}">เลือกรถบัสที่จะใช้:</label>
-          <select id="br${r.id}" name="bus_route_id">${routeOpts(allRoutes, r.bus_route_id, true)}</select>
-          <span class="hint">(เลือกเฉพาะถ้าตั้ง threshold ข้างบน)</span>
-        </div>
-      </fieldset>
-
-      <fieldset><legend>🪑 ความจุ</legend>
-        <div class="field">
-          <label for="sc${r.id}">ที่นั่งต่อคันรถตู้:</label>
-          <input type="number" id="sc${r.id}" name="seat_capacity" value="${r.seat_capacity}" min="1">
-          <span class="hint">(รถตู้ปกติ 13, รถบัสใหญ่ปกติ 42 — แก้ที่การ์ดของสายบัสนั้น)</span>
-        </div>
-      </fieldset>
-
-      <div class="rcard-actions"><button>บันทึก เงื่อนไข</button></div>
+      <div class="field">
+        <label for="rc${r.id}">รหัส:</label>
+        <input type="text" id="rc${r.id}" name="code" value="${esc(r.code)}" required style="width:120px">
+        <label for="rn${r.id}">ชื่อสาย:</label>
+        <input type="text" id="rn${r.id}" name="name" value="${esc(r.name)}" required>
+      </div>
+      <div class="rcard-actions">
+        <button>บันทึกชื่อ</button>
+        <a href="${base}/routes/${r.id}/stops" class="chip"
+           style="background:#eaf2ff;color:#1d4ed8;text-decoration:none">📍 จัดการจุด</a>
+        <button type="submit" class="danger" formaction="${base}/routes/${r.id}/delete"
+          onclick="return confirm('ลบสาย ${esc(r.code).replace(/'/g, "\\'")} ? จุดทั้งหมดของสายนี้จะถูกลบด้วย')">ลบสาย</button>
+      </div>
     </form></div>`;
 }
 
@@ -196,62 +131,77 @@ function newRouteCard(base) {
   return `<div class="rcard">
     <div class="rcard-head"><span class="code">+</span><span class="name">เพิ่มสายใหม่</span></div>
     <form class="rcard-form" action="${base}/routes" method="post">
-      <fieldset><legend>สายใหม่ (สายหลัก ไม่ใช่สายรวม)</legend>
+      <fieldset><legend>สายใหม่</legend>
         <div class="field"><label for="ncode">รหัส:</label>
           <input type="text" id="ncode" name="code" required placeholder="เช่น CHP17"></div>
         <div class="field"><label for="nname">ชื่อสาย:</label>
           <input type="text" id="nname" name="name" required placeholder="เช่น บางคล้า"></div>
-        <div class="field"><label for="npg">กลุ่ม pack:</label>
-          <select id="npg" name="pack_group">${PG_OPTS('A')}</select></div>
-        <div class="field"><label for="ncap">ที่นั่งต่อคัน:</label>
-          <input type="number" id="ncap" name="seat_capacity" value="13" min="1"></div>
+        <div class="field" style="align-items:flex-start">
+          <label for="nstops">จุดรับ-ส่ง:</label>
+          <textarea id="nstops" name="stops" rows="5"
+            placeholder="พิมพ์จุดละบรรทัด เรียงตามลำดับที่รถแวะ (จุดแรก = ขึ้นก่อน)&#10;เช่น&#10;ตลาดบางคล้า&#10;วัดโพธิ์&#10;หน้าโรงเรียน"
+            style="width:280px;padding:6px;border:1px solid #ccc;border-radius:4px;font-family:inherit"></textarea>
+          <span class="hint">หนึ่งจุดต่อหนึ่งบรรทัด — เว้นว่างไว้ก่อนก็ได้ ค่อยเพิ่มทีหลังในหน้า "จัดการจุด"</span>
+        </div>
       </fieldset>
       <div class="rcard-actions"><button>สร้างสาย</button></div>
     </form></div>`;
 }
 
+const ROUTE_ERR = {
+  inuse: '⚠️ ลบสายไม่ได้ — มีพนักงานหรือการจองใช้จุดของสายนี้อยู่ ต้องย้ายคนออกจากจุดก่อน',
+  ref: '⚠️ ลบสายไม่ได้ — สายนี้ถูกอ้างอิงในกลุ่มรวม/กฎจัดรถ (ตั้งค่าขั้นสูง)',
+};
 router.get('/routes', async (req, res, next) => {
   try {
     const base = req.baseUrl;
-    routeCard.base = base;
+    // Only manually-managed routes; combined (engine-generated) routes are hidden.
     const routes = (await pool.query(`
-      SELECT r.id, r.code, r.name, r.pack_group, r.is_combined, r.never_merge,
-             r.min_solo_pax, r.bus_threshold, r.bus_route_id, r.seat_capacity,
+      SELECT r.id, r.code, r.name,
              (SELECT count(*) FROM chp2.route_stop WHERE route_id = r.id) AS stops,
-             (SELECT count(*) FROM chp2.dispatch_rule WHERE route_id = r.id) AS rules,
-             (SELECT string_agg(g.code, ', ' ORDER BY g.code)
-                FROM chp2.merge_group_member m JOIN chp2.merge_group g ON g.id=m.group_id
-                WHERE m.route_id = r.id) AS in_groups
+             (SELECT string_agg(name, ' › ' ORDER BY seq NULLS LAST, id)
+                FROM chp2.route_stop WHERE route_id = r.id) AS stop_names
       FROM chp2.route r
-      ORDER BY r.is_combined, r.pack_group NULLS LAST, r.code`)).rows;
+      WHERE NOT r.is_combined
+      ORDER BY r.code`)).rows;
 
-    // split by section: pack_group A, B, then combined
-    const A = routes.filter(r => !r.is_combined && r.pack_group === 'A');
-    const B = routes.filter(r => !r.is_combined && r.pack_group === 'B');
-    const other = routes.filter(r => !r.is_combined && r.pack_group !== 'A' && r.pack_group !== 'B');
-    const combined = routes.filter(r => r.is_combined);
-
-    let body = `<p class="muted">แต่ละสายมีกลุ่มเงื่อนไข 3 ชุด: เมื่อไหร่วิ่งเดี่ยว · เมื่อไหร่ใช้รถบัสใหญ่ · ที่นั่งต่อคัน. สายรวม (CHPxx+yy) สร้างโดย engine — ตั้งจาก /กลุ่มรวม ไม่ใช่ที่นี่</p>`;
-    if (A.length) body += `<div class="pg-head">กลุ่ม A — ${A.length} สาย</div>` + A.map(r => routeCard(r, routes)).join('');
-    if (B.length) body += `<div class="pg-head">กลุ่ม B — ${B.length} สาย</div>` + B.map(r => routeCard(r, routes)).join('');
-    if (other.length) body += `<div class="pg-head">ไม่มี pack_group</div>` + other.map(r => routeCard(r, routes)).join('');
-    if (combined.length) body += `<div class="pg-head">สายรวม (อ่านอย่างเดียว) — ${combined.length} สาย</div>` + combined.map(r => routeCard(r, routes)).join('');
+    const errMsg = ROUTE_ERR[req.query.err];
+    let body = errMsg ? `<div class="card err">${esc(errMsg)}</div>` : '';
+    body += `<p class="muted">เพิ่ม/ลบสาย และกำหนดว่าจุดรับ-ส่งไหนเป็นของสายไหน. ตอนเพิ่มสายใหม่พิมพ์รายชื่อจุดได้เลย (จุดละบรรทัด)</p>`;
+    body += routes.map(r => routeCard(r, base)).join('') || '<p class="warn">(ยังไม่มีสาย)</p>';
     body += `<div class="pg-head">เพิ่มสายใหม่</div>` + newRouteCard(base);
 
-    res.render('chp2rules', mk('flag ราย route', base, body));
+    res.render('chp2rules', mk('จัดการสายและจุด', base, body));
   } catch (e) { next(e); }
 });
-// POST /routes — create a new sub-route (always is_combined=false)
+// POST /routes — create a route (always is_combined=false) plus its stops.
+// Engine fields (pack_group / seat_capacity) get sensible defaults; tune them
+// later via the hidden advanced form if ever needed.
 router.post('/routes', async (req, res, next) => {
+  const client = await pool.connect();
   try {
     const b = req.body;
-    if (!b.code || !b.name) return res.redirect(req.baseUrl + '/routes');
-    await pool.query(
+    if (!b.code || !b.name) { res.redirect(req.baseUrl + '/routes'); return; }
+    await client.query('BEGIN');
+    const ins = await client.query(
       `INSERT INTO chp2.route (code, name, pack_group, seat_capacity, is_combined)
-       VALUES ($1, $2, $3, $4, false)`,
-      [b.code.trim(), b.name.trim(), b.pack_group || 'A', Number(b.seat_capacity) || 13]);
+       VALUES ($1, $2, 'A', 13, false) RETURNING id`,
+      [b.code.trim(), b.name.trim()]);
+    const routeId = ins.rows[0].id;
+    const stops = String(b.stops || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    for (let i = 0; i < stops.length; i++) {
+      await client.query(
+        `INSERT INTO chp2.route_stop (route_id, seq, name) VALUES ($1, $2, $3)`,
+        [routeId, i + 1, stops[i]]);
+    }
+    await client.query('COMMIT');
     res.redirect(req.baseUrl + '/routes');
-  } catch (e) { next(e); }
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(e);
+  } finally {
+    client.release();
+  }
 });
 // POST /routes/:id — update flags (existing handler)
 router.post('/routes/:id', async (req, res, next) => {
@@ -263,17 +213,44 @@ router.post('/routes/:id', async (req, res, next) => {
     res.redirect(req.baseUrl + '/routes');
   } catch (e) { next(e); }
 });
-// POST /routes/:id/info — update identity (code/name/pack_group). Skips combined routes.
+// POST /routes/:id/info — rename a route (code/name only; pack_group and other
+// engine flags are left untouched). Skips combined routes.
 router.post('/routes/:id/info', async (req, res, next) => {
   try {
     const b = req.body;
     if (!b.code || !b.name) return res.redirect(req.baseUrl + '/routes');
     await pool.query(
-      `UPDATE chp2.route SET code=$1, name=$2, pack_group=$3
-       WHERE id=$4 AND NOT is_combined`,
-      [b.code.trim(), b.name.trim(), b.pack_group || 'A', req.params.id]);
+      `UPDATE chp2.route SET code=$1, name=$2 WHERE id=$3 AND NOT is_combined`,
+      [b.code.trim(), b.name.trim(), req.params.id]);
     res.redirect(req.baseUrl + '/routes');
   } catch (e) { next(e); }
+});
+// POST /routes/:id/delete — remove a (non-combined) route and all its stops.
+// Refused if any of its stops is still referenced by an employee/booking, or if
+// the route itself is referenced by engine config (merge group / dispatch rule).
+router.post('/routes/:id/delete', async (req, res, next) => {
+  const id = Number(req.params.id);
+  const client = await pool.connect();
+  try {
+    const inUse = (await client.query(
+      `SELECT count(*)::int AS n FROM chp2.route_stop s
+       WHERE s.route_id=$1 AND (
+         EXISTS (SELECT 1 FROM chp2.employee e WHERE e.home_stop_id = s.id) OR
+         EXISTS (SELECT 1 FROM chp2.booking  b WHERE b.pickup_stop_id = s.id))`, [id])).rows[0].n;
+    if (inUse > 0) { res.redirect(req.baseUrl + '/routes?err=inuse'); return; }
+
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM chp2.route_stop WHERE route_id=$1`, [id]);
+    await client.query(`DELETE FROM chp2.route WHERE id=$1 AND NOT is_combined`, [id]);
+    await client.query('COMMIT');
+    res.redirect(req.baseUrl + '/routes');
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (e.code === '23503') return res.redirect(req.baseUrl + '/routes?err=ref'); // FK = referenced by engine config
+    next(e);
+  } finally {
+    client.release();
+  }
 });
 
 // ---------- route stops (per-route sub-page) ----------
