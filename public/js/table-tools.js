@@ -8,19 +8,28 @@
 //          data-col inputs exist. Replaces the legacy per-column filter inputs
 //          which are hidden. Used on /member, /thisweekdashboard, etc.
 //   2. click-to-sort column headers (click again to reverse).
+//   3. pagination — the visible (matched + sorted) rows are split into pages of
+//      `pageSize` (default 20, override via `data-page-size` on the table). The
+//      pager only appears when there is more than one page. This replaces the
+//      legacy per-page member.js / dashboard.js pagination (now neutralised)
+//      so search, sort and paging all cooperate from one place.
 //
-// Rows are often rendered asynchronously by each page's own script (fetch +
-// rebuild of <tbody>), so a MutationObserver re-applies the active filter/sort
-// after every re-render. Filtering hides rows via a `.tt-hide` class marked
-// !important so it always wins over the legacy per-column filters (which we
-// just hide and leave empty — that keeps their event bindings from throwing).
+// Pipeline per render is: filter → sort → paginate. Rows are often rendered
+// asynchronously by each page's own script (fetch + rebuild of <tbody>), so a
+// MutationObserver re-applies everything after each re-render. Filtering hides
+// rows via a `.tt-hide` class marked !important; pagination hides off-page rows
+// with inline display:none.
 (function () {
+  var DEFAULT_PAGE_SIZE = 20;
+
   function init() {
     var table = document.querySelector('table.approval-table');
     if (!table || !table.tBodies.length) return;
     var tbody = table.tBodies[0];
     var headers = Array.prototype.slice.call(table.querySelectorAll('thead th'));
     if (!headers.length) return;
+
+    var pageSize = parseInt(table.getAttribute('data-page-size'), 10) || DEFAULT_PAGE_SIZE;
 
     var style = document.createElement('style');
     style.textContent =
@@ -29,7 +38,14 @@
       'border-radius:8px;font-size:14px;}' +
       'table.approval-table thead th.tt-sortable{cursor:pointer;user-select:none;white-space:nowrap;}' +
       'table.approval-table thead th.tt-sortable:hover{background:rgba(0,0,0,.05);}' +
-      '.tt-arrow{font-size:11px;opacity:.7;margin-left:4px;}';
+      '.tt-arrow{font-size:11px;opacity:.7;margin-left:4px;}' +
+      '.tt-pager{display:flex;align-items:center;justify-content:center;gap:12px;' +
+      'flex-wrap:wrap;margin:14px 0 4px;}' +
+      '.tt-pager button{padding:6px 14px;border:1px solid #cbd5e1;background:#fff;' +
+      'border-radius:8px;font-size:13px;cursor:pointer;color:#1e293b;}' +
+      '.tt-pager button:hover:not(:disabled){background:#f1f5f9;}' +
+      '.tt-pager button:disabled{opacity:.45;cursor:default;}' +
+      '.tt-page-label{font-size:13px;color:#475569;min-width:160px;text-align:center;}';
     document.head.appendChild(style);
 
     var bar = document.querySelector('.filter-bar');
@@ -40,7 +56,9 @@
 
     if (columnMode) {
       // Per-column filters: keep them visible, drive apply() on input.
-      colInputs.forEach(function (inp) { inp.addEventListener('input', apply); });
+      colInputs.forEach(function (inp) {
+        inp.addEventListener('input', function () { state.page = 1; apply(); });
+      });
     } else {
       // Unified-search: hide legacy per-column controls, inject one search box.
       document.querySelectorAll('.filter-bar input, .filter-bar select').forEach(function (el) {
@@ -55,19 +73,24 @@
       else table.parentNode.insertBefore(search, table);
       search.addEventListener('input', function () {
         state.term = search.value.trim().toLowerCase();
+        state.page = 1;
         apply();
       });
     }
 
-    // Neutralize the legacy pagination on /member, /thisweekdashboard, /nextweekdashboard:
-    // their member.js / dashboard.js hide rows past page 1 with inline display='none',
-    // which leaks through .tt-hide removal (a match on page 10 would stay hidden).
-    document.querySelectorAll('.pagination').forEach(function (el) { el.style.display = 'none'; });
+    // Neutralize the legacy pagination/results on /member, /thisweekdashboard,
+    // /nextweekdashboard: their member.js / dashboard.js hide rows past page 1
+    // with inline display='none' and bind their own (now hidden) prev/next
+    // buttons. We hide that markup and reset the row display, then drive paging
+    // ourselves below so it cooperates with search + sort.
+    document.querySelectorAll('.pagination, .results').forEach(function (el) {
+      el.style.display = 'none';
+    });
     Array.prototype.slice.call(tbody.rows).forEach(function (r) {
       if (r.style.display === 'none') r.style.display = '';
     });
 
-    var state = { col: -1, dir: 1, term: '' };
+    var state = { col: -1, dir: 1, term: '', page: 1 };
     var firstIsIndex = /^(ลำดับ|#|ที่)$/.test(headers[0].textContent.trim());
 
     headers.forEach(function (th, i) {
@@ -76,8 +99,31 @@
       th.addEventListener('click', function () {
         if (state.col === i) state.dir = -state.dir;
         else { state.col = i; state.dir = 1; }
+        state.page = 1;
         apply();
       });
+    });
+
+    // Pager UI — built once, lives just below the table. Hidden when ≤ 1 page.
+    var pager = document.createElement('div');
+    pager.className = 'tt-pager';
+    var prevBtn = document.createElement('button');
+    prevBtn.type = 'button';
+    prevBtn.textContent = '‹ ก่อนหน้า';
+    var pageLabel = document.createElement('span');
+    pageLabel.className = 'tt-page-label';
+    var nextBtn = document.createElement('button');
+    nextBtn.type = 'button';
+    nextBtn.textContent = 'ถัดไป ›';
+    pager.appendChild(prevBtn);
+    pager.appendChild(pageLabel);
+    pager.appendChild(nextBtn);
+    table.parentNode.insertBefore(pager, table.nextSibling);
+    prevBtn.addEventListener('click', function () {
+      if (state.page > 1) { state.page--; apply(); }
+    });
+    nextBtn.addEventListener('click', function () {
+      state.page++; apply();   // apply() clamps to the last page
     });
 
     function isActionCell(cell) {
@@ -122,6 +168,7 @@
       if (observer) observer.disconnect();
       var rows = Array.prototype.slice.call(tbody.rows);
 
+      // 1) sort (reorders the DOM so pagination slices the sorted order)
       if (state.col >= 0) {
         rows.sort(function (r1, r2) {
           return compare(cellText(r1, state.col), cellText(r2, state.col)) * state.dir;
@@ -129,19 +176,30 @@
         rows.forEach(function (r) { tbody.appendChild(r); });
       }
 
-      var n = 0;
+      // 2) filter — collect the matched rows (in current order)
+      var matched = [];
       rows.forEach(function (r) {
-        var show = rowMatches(r);
-        r.classList.toggle('tt-hide', !show);
-        if (show) {
-          n++;
-          if (r.style.display === 'none') r.style.display = '';
-          if (firstIsIndex && r.cells[0] && !isActionCell(r.cells[0])) {
-            r.cells[0].textContent = n;
-          }
+        var ok = rowMatches(r);
+        r.classList.toggle('tt-hide', !ok);
+        if (ok) matched.push(r);
+      });
+
+      // 3) paginate the matched rows
+      var total = matched.length;
+      var totalPages = Math.max(1, Math.ceil(total / pageSize));
+      if (state.page > totalPages) state.page = totalPages;
+      if (state.page < 1) state.page = 1;
+      var start = (state.page - 1) * pageSize;
+      var end = start + pageSize;
+
+      matched.forEach(function (r, idx) {
+        r.style.display = (idx >= start && idx < end) ? '' : 'none';
+        if (firstIsIndex && r.cells[0] && !isActionCell(r.cells[0])) {
+          r.cells[0].textContent = idx + 1;   // continuous numbering across pages
         }
       });
 
+      // sort-direction arrows
       headers.forEach(function (th, i) {
         var old = th.querySelector('.tt-arrow');
         if (old) old.remove();
@@ -152,6 +210,17 @@
           th.appendChild(s);
         }
       });
+
+      // pager state
+      if (totalPages > 1) {
+        pager.style.display = '';
+        pageLabel.textContent = 'หน้า ' + state.page + ' / ' + totalPages +
+          '  (' + total + ' รายการ)';
+        prevBtn.disabled = state.page <= 1;
+        nextBtn.disabled = state.page >= totalPages;
+      } else {
+        pager.style.display = 'none';
+      }
 
       if (observer) observer.observe(tbody, { childList: true });
     }
