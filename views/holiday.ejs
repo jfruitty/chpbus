@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>วันหยุด</title>
+    <link href="/css/driver.css" rel="stylesheet" type="text/css">
+    <style>
+        .hol-wrap { padding: 8px 4px; max-width: 760px; }
+        .hol-note { background:#eff6ff; border:1px solid #bfdbfe; color:#1e3a8a;
+            border-radius:10px; padding:12px 16px; font-size:13px; line-height:1.7; margin-bottom:18px; }
+        .hol-note b { color:#1d4ed8; }
+        .hol-add { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:22px; }
+        .hol-add label { display:flex; flex-direction:column; gap:4px; font-size:13px; color:#475569; font-weight:600; }
+        .hol-add input { padding:9px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:14px; }
+        .hol-add input[name="note"] { min-width:220px; }
+        .hol-add button { padding:10px 20px; border:none; border-radius:8px; background:#4a8cf7;
+            color:#fff; font-size:14px; font-weight:700; cursor:pointer; }
+        .hol-add button:hover { background:#2f6fe0; }
+        .hol-err { color:#b91c1c; font-size:13px; margin-bottom:12px; }
+        table.hol-table { width:100%; border-collapse:collapse; font-size:14px; }
+        table.hol-table th, table.hol-table td { padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:left; }
+        table.hol-table th { font-size:12px; text-transform:uppercase; letter-spacing:.4px; color:#94a3b8; }
+        table.hol-table tr.past td { color:#94a3b8; }
+        .hol-del { padding:6px 14px; border:1px solid #fecaca; background:#fff; color:#dc2626;
+            border-radius:7px; font-size:13px; cursor:pointer; }
+        .hol-del:hover { background:#fef2f2; }
+        .hol-empty { color:#94a3b8; padding:16px 0; }
+        .badge-past { font-size:11px; color:#94a3b8; margin-left:6px; }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo"></div>
+                <%- include('partials/adminmenu') %>
+            </div>
+            <div class="footer">
+                <div class="company-info">
+                    <p>Resonac</p>
+                    <p>CHP</p>
+                </div>
+                <a href="/logout" style="display:block;margin-top:12px;padding:8px 12px;background:#ef4444;color:#fff;text-decoration:none;border-radius:6px;font-size:13px;text-align:center;">ออกจากระบบ</a>
+            </div>
+        </nav>
+        <main class="main-content">
+            <header class="header">
+                <div class="user-info">
+                    <span>CHP Shuttle Bus — วันหยุด</span>
+                </div>
+                <div class="actions"></div>
+            </header>
+            <div class="hol-wrap">
+                <div class="hol-note">
+                    วันหยุดคือวันที่ <b>ไม่มีรอบจัดรถของตัวเอง</b> (เหมือนเสาร์/อาทิตย์) — รถยังวิ่งปกติ
+                    แต่ระบบจะ <b>รวบวันหยุดไปจัดในรอบของวันทำงานก่อนหน้า</b> แล้วจัดต่อจนถึงเช้าวันทำงานถัดไป<br>
+                    เช่น ถ้า <b>จันทร์</b> เป็นวันหยุด → รอบศุกร์จะจัด ศุกร์เย็น → เสาร์ → อาทิตย์ → จันทร์(รวบ) → <b>อังคารเช้า</b>
+                </div>
+
+                <% if (err) { %>
+                    <div class="hol-err">
+                        <%= err === 'baddate' ? 'รูปแบบวันที่ไม่ถูกต้อง' : 'บันทึกไม่สำเร็จ กรุณาลองใหม่' %>
+                    </div>
+                <% } %>
+
+                <form class="hol-add" method="POST" action="/holiday/add">
+                    <label>วันที่หยุด
+                        <input type="date" name="date" required min="<%= today %>">
+                    </label>
+                    <label>หมายเหตุ (ไม่บังคับ)
+                        <input type="text" name="note" placeholder="เช่น วันแรงงาน">
+                    </label>
+                    <button type="submit">+ เพิ่มวันหยุด</button>
+                </form>
+
+                <table class="hol-table">
+                    <thead>
+                        <tr><th>วันที่</th><th>วัน</th><th>หมายเหตุ</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        <% if (!holidays.length) { %>
+                            <tr><td colspan="4" class="hol-empty">ยังไม่มีวันหยุด</td></tr>
+                        <% } %>
+                        <% holidays.forEach(function (h) { %>
+                            <tr class="<%= h.past ? 'past' : '' %>">
+                                <td><%= h.date %><% if (h.past) { %><span class="badge-past">(ผ่านมาแล้ว)</span><% } %></td>
+                                <td><%= h.dow_th %></td>
+                                <td><%= h.note %></td>
+                                <td>
+                                    <form method="POST" action="/holiday/remove" onsubmit="return confirm('ลบวันหยุด <%= h.date %> ?');">
+                                        <input type="hidden" name="date" value="<%= h.date %>">
+                                        <button type="submit" class="hol-del">ลบ</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <% }); %>
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+</body>
+
+</html>

@@ -142,6 +142,14 @@ async function chpEnsureSchema() {
       stack   text,    -- stack trace of the Error, if any
       context jsonb    -- request body / extra context
     );
+    -- Company holidays (admin-managed). A holiday is a calendar date with NO
+    -- dispatch run of its own (like a weekend): rides still run, but they are
+    -- bundled into the preceding working day's 14:30 run. See chpBuildSegments.
+    CREATE TABLE IF NOT EXISTS chp.holiday (
+      holiday_date date PRIMARY KEY,
+      note         text,
+      created_at   timestamptz DEFAULT now()
+    );
   `);
 }
 
@@ -2103,14 +2111,57 @@ app.get('/weekly', async (req, res) => {
   res.json({ ok: true, note: 'chp2: no rollover needed (week_of based)' });
 });
 
+// Set of 'YYYY-MM-DD' holiday dates (admin-managed via /holiday). Best-effort:
+// on any error treat as "no holidays" so packing still runs as before.
+async function chpGetHolidaySet() {
+  try {
+    const { rows } = await pool.query(
+      `SELECT to_char(holiday_date,'YYYY-MM-DD') d FROM chp.holiday`);
+    return new Set(rows.map(r => r.d));
+  } catch (err) {
+    console.error('chpGetHolidaySet failed:', err);
+    return new Set();
+  }
+}
+
+// Build the pack segments for today's 14:30 run, honouring holidays.
+// A "run day" = a weekday (Mon–Fri) that is NOT a holiday; only run days get
+// their own 14:30 run. Rule: pack today-after, then walk forward day by day —
+// the first run day we hit gets its -before and we stop; every weekend/holiday
+// day before it has no run of its own, so we bundle it as a full day ('all')
+// (rides still operate on holidays, they're just dispatched in advance).
+// With no holidays this reproduces the old behaviour exactly:
+//   Mon–Thu -> [today-after, tomorrow-before]
+//   Fri     -> [Fri-after, Sat-all, Sun-all, Mon-before]
+function chpBuildSegments(holidays) {
+  const segs = [{ d: 0, half: 'after' }];
+  for (let d = 1; d <= 14; d++) { // 14 = safety cap (e.g. long holiday runs)
+    const iso = bangkokDateISO(d);
+    const dow = bangkokDayOfWeek(new Date(Date.now() + d * 24 * 60 * 60 * 1000)); // 0=Sun..6=Sat
+    const isWeekend = dow === 0 || dow === 6;
+    const isHoliday = holidays.has(iso);
+    if (!isWeekend && !isHoliday) { segs.push({ d, half: 'before' }); break; }
+    segs.push({ d, half: 'all' }); // weekend or holiday: bundle the whole day
+  }
+  return segs;
+}
+
 // calculatedaily — main daily packing run (cron at 14:30 Asia/Bangkok Mon–Fri,
-// also exposed as GET /daliy for manual triggering). Mirrors calculatedaily()
-// in the Apps Script: Mon–Thu pack today-PM + tomorrow-AM; Friday packs
-// Fri/Sat/Sun then rollover then Mon-AM. Skips weekends.
+// also exposed as GET /daliy for manual triggering). Packs a rolling 14:30→14:30
+// window via chpBuildSegments, which bundles weekends + admin-set holidays into
+// the preceding working day's run. Skips weekends and holidays (no run of own).
 async function runDaily() {
   const dayOfWeek = bangkokDayOfWeek(); // 0=Sun..6=Sat
   if (dayOfWeek === 0 || dayOfWeek === 6) {
     return { ok: true, skipped: 'weekend' };
+  }
+
+  const holidays = await chpGetHolidaySet();
+  const todayIso = bangkokDateISO(0);
+  if (holidays.has(todayIso)) {
+    // Holiday: no run today — the preceding working day already bundled today.
+    await chpLog('system', 'daliy-skipped-holiday', null, { date: todayIso });
+    return { ok: true, skipped: 'holiday', date: todayIso };
   }
 
   // Guard: don't wipe the dispatcher's in-progress bus list. If chp.driver
@@ -2127,15 +2178,12 @@ async function runDaily() {
   await chpAutoApprove();
   await chpClearDriverState();
 
-  // chp2 engine: จัดเป็นช่วง 14:30→14:30 (BKK) ไม่ใช่ทั้งวัน
-  //   จ.-พฤ. 14:30: pack วันนี้-after + พรุ่งนี้-before
-  //   ศ. 14:30:  pack ศ-after + ส-เต็มวัน + อา-เต็มวัน + จ-before
+  // chp2 engine: จัดเป็นช่วง 14:30→14:30 (BKK) ไม่ใช่ทั้งวัน — segments คำนวณจาก
+  // chpBuildSegments (รวบเสาร์/อาทิตย์ + วันหยุดที่ admin ตั้งไว้เข้ารอบวันก่อนหน้า)
   //   half: 'before' = slot ก่อน 14:30 (07:30/08:15/10:30)
   //         'after'  = slot ตั้งแต่ 14:30 (17:15/19:30/20:15)
-  //         'all'    = ทั้งวัน (ใช้กับ ส./อา. ในรอบศุกร์)
-  const segs = (dayOfWeek === 5)
-    ? [{ d: 0, half: 'after' }, { d: 1, half: 'all' }, { d: 2, half: 'all' }, { d: 3, half: 'before' }]
-    : [{ d: 0, half: 'after' }, { d: 1, half: 'before' }];
+  //         'all'    = ทั้งวัน (เสาร์/อาทิตย์/วันหยุด ที่ถูกรวบ)
+  const segs = chpBuildSegments(holidays);
   const dates = [];
   for (const seg of segs) {
     const d = bangkokDateISO(seg.d);
@@ -2373,6 +2421,58 @@ app.get('/changelogjson', requireRole('admin', 'driver'), async (req, res) => {
   } catch (err) {
     console.error('GET /changelogjson error:', err);
     res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// --- Holidays (admin) -------------------------------------------------------
+// Admin marks calendar dates as holidays. A holiday has no dispatch run of its
+// own; runDaily bundles it into the preceding working day's run (see
+// chpBuildSegments). Plain form POSTs (urlencoded) + redirect — no client JS.
+const HOLIDAY_DOW_TH = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+app.get('/holiday', requireRole('admin'), async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT to_char(holiday_date,'YYYY-MM-DD') AS date,
+             EXTRACT(DOW FROM holiday_date)::int AS dow,
+             note, (holiday_date < CURRENT_DATE) AS past
+      FROM chp.holiday ORDER BY holiday_date`);
+    const holidays = rows.map(r => ({
+      date: r.date, note: r.note || '', past: r.past,
+      dow_th: HOLIDAY_DOW_TH[r.dow],
+    }));
+    res.render('holiday', { holidays, today: bangkokDateISO(0), err: req.query.err || '' });
+  } catch (err) {
+    console.error('GET /holiday error:', err);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.post('/holiday/add', requireRole('admin'), async (req, res) => {
+  const date = (req.body.date || '').trim();
+  const note = (req.body.note || '').trim() || null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.redirect('/holiday?err=baddate');
+  try {
+    await pool.query(
+      `INSERT INTO chp.holiday (holiday_date, note) VALUES ($1, $2)
+       ON CONFLICT (holiday_date) DO UPDATE SET note = EXCLUDED.note`, [date, note]);
+    await chpLog('admin', 'holiday-add', date, { date, note });
+    res.redirect('/holiday');
+  } catch (err) {
+    console.error('POST /holiday/add error:', err);
+    res.redirect('/holiday?err=save');
+  }
+});
+
+app.post('/holiday/remove', requireRole('admin'), async (req, res) => {
+  const date = (req.body.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.redirect('/holiday?err=baddate');
+  try {
+    await pool.query('DELETE FROM chp.holiday WHERE holiday_date = $1', [date]);
+    await chpLog('admin', 'holiday-remove', date, { date });
+    res.redirect('/holiday');
+  } catch (err) {
+    console.error('POST /holiday/remove error:', err);
+    res.redirect('/holiday?err=save');
   }
 });
 
