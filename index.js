@@ -66,8 +66,30 @@ console.error = (...args) => {
       .map(a => (a instanceof Error ? a.message : (typeof a === 'string' ? a : '')))
       .filter(Boolean).join(' ');
     void logSystemError(message, errArg ? errArg.stack : null);  // fire-and-forget
+    void telegramNotifyErrorSilent(message);                     // fire-and-forget
   } catch (e) { /* never let logging throw */ }
 };
+
+// Mirror every logged error to the owner's Telegram (TELEGRAM_CHAT_ID). Like
+// logSystemError, this swallows its own failures and NEVER calls console.error,
+// so it cannot recurse through the wrapper above. Attaches the in-flight
+// request (method/path) when there is one, so a 500 is actionable at a glance.
+async function telegramNotifyErrorSilent(message) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!botToken || !chatId || !message) return;
+  let ctx = null;
+  try { ctx = chpReqContext.getStore() || null; } catch (e) { /* no active request */ }
+  const where = ctx ? `\n📍 ${ctx.method} ${ctx.path}` : '';
+  const text = `🔴 CHP ระบบมี error${where}\n${String(message).slice(0, 1500)}`;
+  try {
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text }),
+    });
+  } catch (e) { /* swallow — must never recurse into console.error */ }
+}
 
 // Last-resort capture for errors outside any request (cron jobs, stray async).
 process.on('unhandledRejection', (reason) => {
@@ -1247,6 +1269,10 @@ app.post('/sendmsgtodriver', requireRole('admin'), async (req, res) => {
     await pool.query('DELETE FROM chp.bustoday');
     await pool.query('DELETE FROM chp.seattoday');
 
+    const busMsgCnt = bustoday.filter(b => b.driver_user_id).length;
+    const paxMsgCnt = paxItems.length;
+    await telegramNotify(`✅ HR ส่งข้อความแจ้งคนขับ/ผู้โดยสารแล้ว\nคนขับ ${busMsgCnt} คัน / ผู้โดยสาร ${paxMsgCnt} คน\nบันทึกเข้า busfromhr/seatfromhr เรียบร้อย`).catch(() => {});
+
     res.json({ ok: true });
   } catch (err) {
     console.error('POST /sendmsgtodriver error:', err);
@@ -2084,6 +2110,7 @@ async function runDaily() {
     await chpLog('system', 'daliy-skipped-driver-busy', null, { day: dayOfWeek });
     await sendPushMessage(adminLineUsers,
       '⚠️ ข้ามจัดรถอัตโนมัติ: ยังมีรถที่คนจัดรถกรอกคนขับค้างอยู่ใน chp.driver (ยังไม่ได้ส่ง HR) — กรุณาส่ง HR ก่อน แล้วค่อยรัน /daliy ใหม่');
+    await telegramNotify('⚠️ CHP ข้ามจัดรถอัตโนมัติ: ยังมีรถค้างใน chp.driver (ยังไม่ได้ส่ง HR) — กรุณาส่ง HR ก่อน แล้วรันใหม่').catch(() => {});
     return { ok: true, skipped: 'driver-has-assignments' };
   }
   await chpLog('system', 'daliy-pack', null, { day: dayOfWeek });
@@ -2109,6 +2136,7 @@ async function runDaily() {
   }
 
   await sendPushMessage(adminLineUsers, `CHP daliy pack เสร็จ (วัน ${dayOfWeek}: ${dates.join(', ')})`);
+  await telegramNotify(`🚐 จัดรถอัตโนมัติเสร็จแล้ว (วัน ${dayOfWeek})\nช่วงที่จัด: ${dates.join(', ')}`).catch(() => {});
   return { ok: true, day: dayOfWeek, dates };
 }
 
@@ -2149,6 +2177,9 @@ app.post('/driversendtohr', async (req, res) => {
     await pool.query('DELETE FROM chp.driver');
     await pool.query('DELETE FROM chp.seatdriver');
     await sendPushMessage(adminLineUsers, 'จัดรถ CHP ส่งข้อมูลให้ HR');
+    const busCnt = (await pool.query('SELECT count(*) FROM chp.bustoday')).rows[0].count;
+    const seatCnt = (await pool.query('SELECT count(*) FROM chp.seattoday')).rows[0].count;
+    await telegramNotify(`📤 คนจัดรถส่งข้อมูลให้ HR แล้ว\nรถ ${busCnt} คัน / ผู้โดยสาร ${seatCnt} คน`).catch(() => {});
     res.json({ ok: true });
   } catch (err) {
     console.error('POST /driversendtohr error:', err);
