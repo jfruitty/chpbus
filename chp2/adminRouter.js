@@ -51,6 +51,17 @@ function layout(title, base, body) {
 </header><main>${body}</main></body></html>`;
 }
 function mk(title, base, body) { return { title, base, bodyHtml: body }; }
+// Sub-nav (pill bar) shared by the advanced engine pages, reachable from the
+// "เงื่อนไขจัดรถ (RMT)" sidebar item. The route+stop manager (/routes) is a
+// separate sidebar item and intentionally NOT listed here.
+function engineNav(base, active) {
+  const items = [['', 'ภาพรวม'], ['/groups', 'กลุ่มรวม'], ['/rules', 'กฎจุด/ทิศ'], ['/dryrun', 'ลองจัดดู']];
+  const pills = items.map(([path, label]) => {
+    const on = path === active;
+    return `<a href="${esc(base + path)}" style="padding:6px 14px;border-radius:999px;text-decoration:none;font-size:14px;${on ? 'background:#0f4c81;color:#fff' : 'background:#eef2f5;color:#0f4c81'}">${esc(label)}</a>`;
+  }).join('');
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px">${pills}</div>`;
+}
 const BOUND_LABEL = { inbound: 'ขาเข้า (ออกจากบ้าน)', outbound: 'ขาออก (ออกจากโรงงาน)' };
 const boundOpts = (sel) => ['', 'inbound', 'outbound']
   .map(b => `<option value="${b}"${b === (sel ?? '') ? ' selected' : ''}>${b === '' ? '(ทั้งสองทิศ)' : BOUND_LABEL[b]}</option>`).join('');
@@ -91,7 +102,21 @@ async function validate(db) {
 // Simplified tool: the landing page is just the route/stop manager.
 // (The advanced engine pages — groups / rules / dryrun — are kept below and are
 //  still reachable by URL, but are no longer linked in the navigation.)
-router.get('/', (req, res) => res.redirect(req.baseUrl + '/routes'));
+// Landing for the advanced engine. Route+stop management lives at /routes
+// (its own sidebar item); this page is the "เงื่อนไขจัดรถ (RMT)" entry point.
+router.get('/', (req, res) => {
+  const base = req.baseUrl;
+  const linkCard = (path, name, desc) => `<div class="rcard">
+    <div class="rcard-head"><span class="name">${esc(name)}</span></div>
+    <div class="field" style="margin:2px 0 8px"><span class="muted">${esc(desc)}</span></div>
+    <div class="rcard-actions"><a href="${esc(base + path)}" class="chip"
+      style="background:#eaf2ff;color:#1d4ed8;text-decoration:none">เปิด →</a></div></div>`;
+  res.render('chp2rules', mk('เงื่อนไขจัดรถ (RMT)', base, engineNav(base, '') + `
+    <p class="muted">ตั้งค่า engine จัดรถขั้นสูง — กำหนดกลุ่มรวมหลายสายเข้าคันเดียว, กฎว่าสายไหนวิ่งเดี่ยว/ยุบรวม แล้วลองจัดดูผลก่อนใช้จริง (การแก้สาย/จุดอยู่ที่เมนู "จัดการสายและจุด")</p>
+    ${linkCard('/groups', 'กลุ่มรวม', 'แต่ละกลุ่ม = หนึ่งคันรถตู้ที่รวมหลายสายเข้าด้วยกัน + สายผลลัพธ์ที่ผู้โดยสารเห็น')}
+    ${linkCard('/rules', 'กฎจุด/ทิศ', 'กำหนดว่าสายไหนวิ่งเดี่ยว หรือยุบรวมเข้ากลุ่ม ตามจุดต้นทาง/ทิศทาง')}
+    ${linkCard('/dryrun', 'ลองจัดดู', 'จำลองการจัดรถของวันที่เลือก ดูผลก่อน commit ลง stage system')}`));
+});
 
 // ---------- route flags (card layout, level-2 redesign) ----------
 const PG_OPTS = (sel) => ['A', 'B'].map(g => `<option value="${g}"${g === sel ? ' selected' : ''}>${g}</option>`).join('');
@@ -407,7 +432,7 @@ router.get('/groups', async (req, res, next) => {
           </div>
         </form></div>`;
     }).join('');
-    res.render('chp2rules', mk('กลุ่มรวม', base, `
+    res.render('chp2rules', mk('กลุ่มรวม', base, engineNav(base, '/groups') + `
       <p class="muted">แต่ละกลุ่ม = หนึ่งคันรถตู้รวมหลายสายเข้าด้วยกัน. เลือกสมาชิกที่จะรวมเข้ามา และสายผลลัพธ์ (รถที่ผู้โดยสารจะเห็น). สร้างกลุ่มใหม่ที่การ์ดท้ายสุด</p>
       ${cards}
       <div class="rcard">
@@ -505,7 +530,7 @@ router.get('/rules', async (req, res, next) => {
             onclick="return confirm('ลบกฎนี้?')">ลบ</button>
         </div>
       </form></div>`).join('');
-    res.render('chp2rules', mk('กฎจุด/ทิศ', base, `
+    res.render('chp2rules', mk('กฎจุด/ทิศ', base, engineNav(base, '/rules') + `
       <p class="muted">แต่ละกฎเชื่อมกับสายหนึ่งสาย: ถ้ามีผู้โดยสารอยู่ในช่วงจุดต้นทางที่ระบุ → สายนั้นวิ่งเดี่ยวออกรถตู้สายตัวเอง ถ้าไม่มี → ยุบรวมตามกลุ่มที่เลือก (เลือกกลุ่มสำรองไว้ได้ เผื่อกลุ่มหลักเต็ม)</p>
       ${cards}
       <div class="rcard">
@@ -615,10 +640,10 @@ router.get('/dryrun', async (req, res, next) => {
     const base = req.baseUrl, date = String(req.query.date || '');
     const half = parseHalf(req.query.half);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
-      return res.render('chp2rules', mk('ลองจัดดู', base, `<div class="card">${dryrunForm(base, bkkYmd(1), half)}</div>`));
+      return res.render('chp2rules', mk('ลองจัดดู', base, engineNav(base, '/dryrun') + `<div class="card">${dryrunForm(base, bkkYmd(1), half)}</div>`));
     const { weekOf, dow, plan } = await planDate(pool, date, { allApprovals: true, half });
     const diag = await weekDiagnostics(pool, weekOf, dow);
-    res.render('chp2rules', mk('ลองจัดดู', base, renderPlan(base, date, weekOf, dow, plan, req.query.committed === '1', diag, half)));
+    res.render('chp2rules', mk('ลองจัดดู', base, engineNav(base, '/dryrun') + renderPlan(base, date, weekOf, dow, plan, req.query.committed === '1', diag, half)));
   } catch (e) { next(e); }
 });
 router.post('/commit', async (req, res, next) => {
