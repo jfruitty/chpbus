@@ -113,11 +113,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   const sendbutton = document.getElementById('send-btn');
+  const sendbuttonLabel = sendbutton.textContent;
+  let sending = false;
 
+  function resetSendButton() {
+    sending = false;
+    sendbutton.disabled = false;
+    sendbutton.textContent = sendbuttonLabel;
+  }
 
   sendbutton.addEventListener('click', function () {
-
+    // Ignore repeat clicks while a send is in flight. The send pushes one LINE
+    // message per driver + per passenger (can take 10-30s), so without this the
+    // button looks "frozen" and users press again — which used to wipe the data.
+    if (sending) return;
+    sending = true;
     sendbutton.disabled = true;
+    sendbutton.textContent = '⏳ กำลังส่ง... อย่าปิดหน้านี้';
 
     fetch('/sendmsgtodriver', {
       method: 'POST',
@@ -125,23 +137,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         'Content-Type': 'application/json'
       }
     })
-      .then(response => {
+      .then(async response => {
         if (response.ok) {
           alert('ส่งข้อความถึงผู้ใช้สำเร็จ');
-          window.location.reload();
+          window.location.reload(); // leave the button disabled until reload
+          return;
         }
+        // Not ok (e.g. 409 "ไม่มีข้อมูลให้ส่ง") — show the server message, allow retry.
+        let msg = 'ส่งไม่สำเร็จ กรุณาลองใหม่';
+        try { const r = await response.json(); if (r && r.error) msg = r.error; } catch (e) { /* ignore */ }
+        alert(msg);
+        resetSendButton();
       })
       .catch(error => {
-        console.error('Error removing bus:', error);
-        alert('An error occurred while sendmsgtouser');
-      })
-      .finally(() => {
-        // Re-enable the button after 3 seconds
-        setTimeout(() => {
-          sendbutton.disabled = false;
-        }, 5000);
+        console.error('sendmsgtodriver failed:', error);
+        alert('เกิดข้อผิดพลาดระหว่างส่งข้อความ กรุณาลองใหม่');
+        resetSendButton();
       });
-
   });
 
   document.getElementById('downloadCsvButton').addEventListener('click', () => {

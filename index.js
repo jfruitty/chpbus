@@ -1226,6 +1226,15 @@ app.post('/sendmsgtodriver', requireRole('admin'), async (req, res) => {
     const bustoday = (await pool.query('SELECT * FROM chp.bustoday')).rows;
     const seattoday = (await pool.query('SELECT * FROM chp.seattoday')).rows;
 
+    // Guard against a double-press: after a successful send, bustoday/seattoday
+    // are cleared. Pressing "send" again would otherwise DELETE busfromhr/
+    // seatfromhr and re-insert nothing (the transfer is replace-all), wiping the
+    // just-sent snapshot. If both are empty there is nothing to send — bail out
+    // without touching the from-hr tables.
+    if (bustoday.length === 0 && seattoday.length === 0) {
+      return res.status(409).json({ error: 'ไม่มีข้อมูลให้ส่ง (อาจส่งไปแล้ว) — ตารางรถ/ที่นั่งวันนี้ว่างอยู่' });
+    }
+
     const dayTH = { monday: 'จันทร์', tuesday: 'อังคาร', wednesday: 'พุธ', thursday: 'พฤหัสบดี', friday: 'ศุกร์', saturday: 'เสาร์', sunday: 'อาทิตย์' };
     const boundTH = { inbound: 'ขาเข้าโรงงาน', outbound: 'ขาออกโรงงาน' };
 
