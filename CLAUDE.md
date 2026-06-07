@@ -99,7 +99,7 @@ chpbus/
 
 ### วงจรข้อมูลรายสัปดาห์ (ส่วนที่ต้องเข้าใจให้ขึ้นใจ)
 
-1. พนักงานจองสัปดาห์หน้าผ่าน LIFF (`POST /nextweek`, [index.js:1254](index.js#L1254)) → เขียนลง `chp.nextweek` (`route` ถูก derive จาก pickup `location` ของ user ผ่าน `chpDeriveRoute`); มี cutoff ล็อก: ศุกร์ ≥ 15:00 และเสาร์/อาทิตย์ จะจองไม่ได้ (`isAfterChpCutoff`)
+1. พนักงานจองสัปดาห์หน้าผ่าน LIFF (`POST /nextweek`, [index.js:1254](index.js#L1254)) → เขียนลง `chp.nextweek` (`route` ถูก derive จาก pickup `location` ของ user ผ่าน `chpDeriveRoute`); มี cutoff ล็อก: **ศุกร์ ≥ 14:00 BKK** และเสาร์/อาทิตย์ จะจองไม่ได้ เปิดอีกครั้งจันทร์ 00:00 (`isAfterChpCutoff` คิดเป็นเวลา BKK ด้วย +7h offset แล้ว — ตรงกับ guard ฝั่ง client `isAfter2pmOnFriday()` ใน [views/nextweek.ejs](views/nextweek.ejs) ที่ใช้เวลาเครื่องผู้ใช้)
 2. **Rollover รายสัปดาห์** — `GET /weekly` ([index.js:2274](index.js#L2274)): `thisweek` → `lastweek`, `nextweek` → `thisweek` แล้วล้าง `nextweek`
 3. **จัดรถรายวัน** — `runDaily()` ที่ [index.js](index.js) (เปิดเป็น `GET /daliy` ด้วย): ตอนนี้ใช้ chp2 engine (`chp2Pack.planDate` + `commitToChp`) อ่านจาก `chp2.booking` (ไม่ใช่ `chp.thisweek`) แล้วเขียนผลลง `chp.driver` + `chp.seatdriver` รายวัน. **window = 14:30→14:30 BKK ไม่ใช่ทั้งวัน**: จันทร์-พฤหัส รัน 14:30 → จัด "วันนี้-after + พรุ่งนี้-before" ; ศุกร์ 14:30 → จัด "ศ-after + ส-เต็มวัน + อา-เต็มวัน + จ-before". half filter (`before` = slot < 14:30 = 07:30/08:15/10:30 ; `after` = slot ≥ 14:30 = 17:15/19:30/20:15 ; `all` = ทั้งวัน) ส่งผ่านเข้า `loadPassengers` SQL เป็น `AND br.depart_time < '14:30'::time` / `>=`. ข้าม ส./อา. (cron ไม่รัน)
 4. **ส่งให้ HR รีวิว** — `POST /driversendtohr` ([index.js:2377](index.js#L2377)): เลื่อน `driver` → `bustoday`, `seatdriver` → `seattoday` แล้วล้างตาราง proposal + push แจ้งเตือน LINE
@@ -139,7 +139,7 @@ chpbus/
 | `30 14 * * 1-5` | จ.–ศ. 14:30 | `runDaily` — จัดรถ + rollover (วันศุกร์) |
 
 ทุกงาน trigger เองได้ผ่าน endpoint: `GET /daliy`, `GET /autoresetapprove`, `GET /tranfernextweekforhr`, `GET /weekly`
-⚠️ helper เวลา (`bangkok*`) บวก +7h เองถูกต้อง **ยกเว้น** `isAfterChpCutoff()` ([index.js:175](index.js#L175)) ที่ใช้ `getDay()`/`getHours()` ของ server ตรง ๆ (บั๊กแฝงถ้า host ไม่ใช่ BKK)
+helper เวลา (`bangkok*`) บวก +7h เองถูกต้อง — `isAfterChpCutoff()` ([index.js:321](index.js#L321)) ก็ใช้ +7h offset แล้วอ่าน `getUTCDay()`/`getUTCHours()` เช่นกัน (เคยเป็นบั๊กที่ใช้ `getDay()`/`getHours()` ของ server ตรง ๆ ทำให้ cutoff เพี้ยนตาม timezone ของ host — แก้แล้ว)
 
 ### View layer
 

@@ -315,13 +315,18 @@ function requireRole(...roles) {
 // เข้าที่ /chp2/rules (ต้องล็อกอิน admin). engine อ่าน/เขียน schema chp2 เท่านั้น
 app.use('/chp2/rules', requireRole('admin'), require('./chp2/adminRouter'));
 
-// CHP cutoff: after Friday 15:00 the packing for Sat/Sun/Mon has already
-// run (see Apps Script calculatedaily Friday branch at 14:30-14:35),
-// so nextweek edits should be locked until the weekly rollover.
+// CHP cutoff: next-week bookings lock from Friday 14:00 BKK through the weekend
+// (the Friday 14:30 pack reads chp2.booking, so edits after that are too late),
+// reopening Monday 00:00 BKK. Evaluated in Bangkok time by offsetting the
+// absolute UTC timestamp +7h then reading UTC fields — correct regardless of the
+// host clock (Railway runs UTC), same pattern as bangkokDayOfWeek(). Mirrors the
+// client guard isAfter2pmOnFriday() in views/nextweek.ejs (which already uses the
+// user's device/BKK time and the 14:00 boundary).
 function isAfterChpCutoff() {
-  const now = new Date();
-  const d = now.getDay();
-  return (d === 5 && now.getHours() >= 15) || d === 0 || d === 6;
+  const bkk = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  const d = bkk.getUTCDay();    // 0=Sun .. 6=Sat (Bangkok)
+  const h = bkk.getUTCHours();  // Bangkok hour
+  return (d === 5 && h >= 14) || d === 0 || d === 6;
 }
 
 async function telegramNotify(message) {
