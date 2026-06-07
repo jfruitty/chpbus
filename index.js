@@ -5,6 +5,7 @@ const path = require('path');
 const axios = require('axios');
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const { Pool } = require('pg');
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const ExcelJS = require('exceljs');
@@ -62,8 +63,17 @@ console.error = (...args) => {
   chpOrigConsoleError(...args);
   try {
     const errArg = args.find(a => a instanceof Error);
+    // Serialize object args too. Many call sites log `err.response.data` (a plain
+    // object, not an Error) e.g. sendPushMessage / verifyaccesstoken — without
+    // this they collapsed to '' and the row kept only the prefix string
+    // ("sendPushMessage error:"), discarding the actual LINE/HTTP reason.
     const message = args
-      .map(a => (a instanceof Error ? a.message : (typeof a === 'string' ? a : '')))
+      .map(a => {
+        if (a instanceof Error) return a.message;
+        if (typeof a === 'string') return a;
+        if (a == null) return '';
+        try { return JSON.stringify(a); } catch (e) { return String(a); }
+      })
       .filter(Boolean).join(' ');
     void logSystemError(message, errArg ? errArg.stack : null);  // fire-and-forget
     void telegramNotifyErrorSilent(message);                     // fire-and-forget
@@ -1027,9 +1037,21 @@ async function chpInsertPax(table, body) {
 }
 
 function chpEditPax(table, body) {
+  // Edit forms submit only the fields the user touched; blank bus/seat must keep
+  // the existing value, not crash. parseInt('') is NaN, which PostgreSQL rejects
+  // ("invalid input syntax for type integer: NaN"), so map blank/invalid -> null
+  // and COALESCE back to the current column. route blank likewise keeps current.
+  const busN = parseInt(body.bus_number, 10);
+  const seatN = parseInt(body.seat_number, 10);
   return pool.query(
-    `UPDATE ${table} SET route = $2, busnumber = $3, seat = $4 WHERE id = $1`,
-    [body.id, body.route, parseInt(body.bus_number, 10), parseInt(body.seat_number, 10)]
+    `UPDATE ${table}
+        SET route     = COALESCE(NULLIF($2, ''), route),
+            busnumber = COALESCE($3, busnumber),
+            seat      = COALESCE($4, seat)
+      WHERE id = $1`,
+    [body.id, body.route,
+      Number.isNaN(busN) ? null : busN,
+      Number.isNaN(seatN) ? null : seatN]
   );
 }
 
@@ -2334,9 +2356,22 @@ app.post('/callback', validateSignatureMiddleware, async (req, res) => {
 });
 // --- Phase 6: CSV/Excel exports for HR ---
 //
-// Each endpoint writes a temporary file to the project root, serves it via
-// res.download(), then unlinks it. Caller passes a fully-qualified table
-// name (e.g. "chp.busfromhr") and the desired download filename.
+// Each endpoint writes a temporary file, serves it via res.download(), then
+// unlinks it. Caller passes a fully-qualified table name (e.g. "chp.busfromhr")
+// and the desired download filename (= the name the browser will save as).
+//
+// The temp path is made UNIQUE per request (pid + counter) and placed in the OS
+// temp dir. With a fixed name in the project root, two overlapping downloads of
+// the same table raced: the first request's post-download unlink() deleted the
+// file while the second was still stat()-ing it -> ENOENT. A unique path per
+// request removes the collision; res.download's 2nd arg still controls the
+// user-facing filename, so downloads are still named e.g. seattoday.xlsx.
+let chpTmpSeq = 0;
+function chpTmpPath(filename) {
+  const ext = path.extname(filename);
+  const base = path.basename(filename, ext);
+  return path.join(os.tmpdir(), `${base}-${process.pid}-${++chpTmpSeq}${ext}`);
+}
 
 async function chpDownloadExcel(tableName, filename, res) {
   const client = await pool.connect();
@@ -2349,7 +2384,7 @@ async function chpDownloadExcel(tableName, filename, res) {
     worksheet.columns = Object.keys(result.rows[0]).map(key => ({ header: key, key }));
     result.rows.forEach(row => worksheet.addRow(row));
 
-    const filePath = path.join(__dirname, filename);
+    const filePath = chpTmpPath(filename);
     await workbook.xlsx.writeFile(filePath);
     res.download(filePath, filename, (err) => {
       if (err) console.error('chpDownloadExcel send error:', err);
@@ -2369,7 +2404,7 @@ async function chpDownloadCsv(tableName, filename, res) {
     const result = await client.query(`SELECT * FROM ${tableName}`);
     if (result.rows.length === 0) return res.status(404).send('No data available');
 
-    const filePath = path.join(__dirname, filename);
+    const filePath = chpTmpPath(filename);
     const csvWriter = createCsvWriter({
       path: filePath,
       header: Object.keys(result.rows[0]).map(k => ({ id: k, title: k })),
