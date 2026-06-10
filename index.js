@@ -1271,7 +1271,10 @@ app.post('/sendmsgtodriver', requireRole('admin'), async (req, res) => {
     }
 
     const dayTH = { monday: 'จันทร์', tuesday: 'อังคาร', wednesday: 'พุธ', thursday: 'พฤหัสบดี', friday: 'ศุกร์', saturday: 'เสาร์', sunday: 'อาทิตย์' };
-    const boundTH = { inbound: 'ขาเข้าโรงงาน', outbound: 'ขาออกโรงงาน' };
+    // chp2 engine เก็บ day/bound เป็นภาษาไทยลง bustoday/seattoday แล้ว (เช่น "พุธ"/"ขาเข้า")
+    // map คีย์อังกฤษเดิมหา key ไทยไม่เจอ → header เคยพังเป็น "วัน undefined undefined"
+    // จึงรับคีย์ไทยด้วย และมี fallback ไปค่าดิบเสมอ (เหมือนฝั่งผู้โดยสาร)
+    const boundTH = { inbound: 'ขาเข้าโรงงาน', outbound: 'ขาออกโรงงาน', 'ขาเข้า': 'ขาเข้าโรงงาน', 'ขาออก': 'ขาออกโรงงาน' };
 
     for (const bus of bustoday) {
       if (!bus.driver_user_id) continue;
@@ -1296,7 +1299,7 @@ app.post('/sendmsgtodriver', requireRole('admin'), async (req, res) => {
       }
       text += `\nรวมทั้งสิ้น ${total} คน `;
       await sendPushMessage([bus.driver_user_id],
-        `คุณ ${bus.first_name} ${bus.last_name} \nทะเบียน ${bus.per_id} \nสาย ${bus.route} (คันที่ ${bus.bus_number}) \nวัน ${dayTH[bus.day]} ${boundTH[bus.bound]} เวลา ${bus.time} \n\n${text}`);
+        `คุณ ${bus.first_name} ${bus.last_name} \nทะเบียน ${bus.per_id} \nสาย ${bus.route} (คันที่ ${bus.bus_number}) \nวัน ${dayTH[bus.day] || bus.day} ${boundTH[bus.bound] || bus.bound} เวลา ${bus.time} \n\n${text}`);
     }
 
     // Notify each passenger of their bus/seat (mirrors the old sendlinetopax()).
