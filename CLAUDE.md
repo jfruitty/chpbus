@@ -86,12 +86,12 @@ chpbus/
 - อื่น ๆ: `users` (พนักงานที่ลงทะเบียน), `route` (แค็ตตาล็อกเส้นทาง), `change_log` (audit trail)
 
 **ข้อควรรู้สำคัญ (อย่าหลงตามชื่อตาราง):**
-- ตาราง history 6 ตัว (`driverhistoryfrom*`, `seathistoryfrom*`) **เป็นตารางตาย** — ไม่มีโค้ดอ่านหรือเขียนเลย หน้า `/bushistory` กับ `/seathistory` จริง ๆ อ่านจาก `busfromhr`/`seatfromhr`
+- ตาราง history: `*fromhr` 2 ตัว (`driverhistoryfromhr`/`seathistoryfromhr`) **กลับมามีชีวิตแล้ว** — `chpAppendHistoryFromHr()` append snapshot จาก `busfromhr`/`seatfromhr` ลงทุกครั้งที่ HR กดส่ง (`/sendmsgtodriver`, best-effort ไม่ทำ send พัง) มี `service_date` + `create_at` กำกับ batch หน้า `/runhistory` (admin) อ่านมาโชว์ย้อนหลังทุกวัน. ส่วน `*fromsystem`/`*fromdriver` 4 ตัว **ยังเป็นตารางตาย**. หน้า `/bushistory` กับ `/seathistory` (เดิม) ยังอ่านจาก `busfromhr`/`seatfromhr` = batch ล่าสุดเท่านั้น
 - ตาราง `locations` กับ `approvalstatus` **ไม่ถูกใช้** (คำว่า approvalstatus มีเฉพาะเป็น column ใน `users`)
-- "ประวัติ" ที่ใช้จริงคือ: `busfromhr`/`seatfromhr` (snapshot batch ล่าสุด) + `change_log` (audit) + `hrnextweek` (snapshot booking รายสัปดาห์)
+- "ประวัติ" ที่ใช้จริงคือ: `driverhistoryfromhr`/`seathistoryfromhr` (สะสมทุก batch ตั้งแต่ 2026-06-14 ผ่าน `/runhistory`) + `busfromhr`/`seatfromhr` (batch ล่าสุด) + `change_log` (audit) + `hrnextweek` (snapshot booking รายสัปดาห์)
 - ⚠️ โค้ดอ้าง column `users.supervisor` (ที่ `/supervisor`, `/hrnextweek`) แต่ schema dump ไม่มี column นี้ — น่าจะถูกเพิ่มนอก migration ถ้าแตะส่วนนี้ต้องเช็ก
 - `service_date` (วันที่จริง) ถูกเพิ่มเข้า pipeline tables ผ่าน migration แบบ additive ([index.js:46-51](index.js#L46-L51))
-- ชื่อ column ไม่สม่ำเสมอ: ฝั่ง bus ใช้ `bus_number`/`per_id` แต่ฝั่ง seat ใช้ `busnumber`/`perid`; day ฝั่ง bus เป็นอังกฤษ (monday) ฝั่ง seat เป็นไทย (จันทร์)
+- ชื่อ column ไม่สม่ำเสมอ: ฝั่ง bus ใช้ `bus_number`/`per_id` แต่ฝั่ง seat ใช้ `busnumber`/`perid`. ⚠️ **day/bound เก็บเป็นไทยทั้ง bus และ seat side** (เช่น `"พุธ"`/`"ขาเข้า"`) — chp2 engine เขียนไทยลงทั้งคู่ (เดิมเอกสารเขียนว่า bus side เป็นอังกฤษ ซึ่งไม่จริงแล้ว; เคยเป็นบั๊กที่ข้อความคนขับขึ้น "วัน undefined undefined" เพราะ map ใช้คีย์อังกฤษ — แก้ที่ [index.js:1273-1300](index.js#L1273-L1300) ให้รับคีย์ไทย + fallback)
 
 ### Migration ตอน startup
 
@@ -103,7 +103,7 @@ chpbus/
 2. **Rollover รายสัปดาห์** — `GET /weekly` ([index.js:2274](index.js#L2274)): `thisweek` → `lastweek`, `nextweek` → `thisweek` แล้วล้าง `nextweek`
 3. **จัดรถรายวัน** — `runDaily()` ที่ [index.js](index.js) (เปิดเป็น `GET /daliy` ด้วย): ตอนนี้ใช้ chp2 engine (`chp2Pack.planDate` + `commitToChp`) อ่านจาก `chp2.booking` (ไม่ใช่ `chp.thisweek`) แล้วเขียนผลลง `chp.driver` + `chp.seatdriver` รายวัน. **window = 14:30→14:30 BKK ไม่ใช่ทั้งวัน**: จันทร์-พฤหัส รัน 14:30 → จัด "วันนี้-after + พรุ่งนี้-before" ; ศุกร์ 14:30 → จัด "ศ-after + ส-เต็มวัน + อา-เต็มวัน + จ-before". half filter (`before` = slot < 14:30 = 07:30/08:15/10:30 ; `after` = slot ≥ 14:30 = 17:15/19:30/20:15 ; `all` = ทั้งวัน) ส่งผ่านเข้า `loadPassengers` SQL เป็น `AND br.depart_time < '14:30'::time` / `>=`. ข้าม ส./อา. (cron ไม่รัน)
 4. **ส่งให้ HR รีวิว** — `POST /driversendtohr` ([index.js:2377](index.js#L2377)): เลื่อน `driver` → `bustoday`, `seatdriver` → `seattoday` แล้วล้างตาราง proposal + push แจ้งเตือน LINE
-5. **HR ปิดงาน** — `POST /sendmsgtodriver` ([index.js:1122](index.js#L1122)): push manifest ให้คนขับแต่ละคัน + รายละเอียดที่นั่งให้ผู้โดยสารแต่ละคน แล้วคัด `bustoday` → `busfromhr`, `seattoday` → `seatfromhr` (ตัวที่อ่านโชว์/ดาวน์โหลดจริง)
+5. **HR ปิดงาน** — `POST /sendmsgtodriver` ([index.js:1122](index.js#L1122)): push manifest ให้คนขับแต่ละคัน + รายละเอียดที่นั่งให้ผู้โดยสารแต่ละคน แล้วคัด `bustoday` → `busfromhr`, `seattoday` → `seatfromhr` (ตัวที่อ่านโชว์/ดาวน์โหลดจริง) แล้ว `chpAppendHistoryFromHr()` **append** snapshot นั้นเข้า `driverhistoryfromhr`/`seathistoryfromhr` (ไม่ลบ — สะสมทุก batch สำหรับหน้า `/runhistory`) ก่อนล้าง `bustoday`/`seattoday`
 
 ### การจัดรถ — `chpPack(day, kind, group)`
 
@@ -150,7 +150,7 @@ helper เวลา (`bangkok*`) บวก +7h เองถูกต้อง �
   - หน้า **engine ขั้นสูง (`/groups` กลุ่มรวม, `/rules` กฎจุด/ทิศ, `/dryrun`+`/commit` ลองจัดดู) เข้าถึงผ่านเมนู "เงื่อนไขจัดรถ (RMT)" + sub-nav** (โค้ด/handler ครบ; `validate()`/`PG_OPTS` ยังเป็น dead code แต่คงไว้). flag ราย route (`never_merge`/`min_solo_pax`/`bus_threshold`/`bus_route_id`/`seat_capacity`/`pack_group`) ไม่มี UI แก้แล้ว — ค่าเดิมใน DB ยังอยู่และ engine ใช้ตามเดิม; สายที่สร้างใหม่ default `pack_group='A'`, `seat_capacity=13`. `POST /routes/:id` (อัปเดต flag) และ `POST /routes/:id/info` (เปลี่ยนแค่ code/name แล้ว ไม่แตะ pack_group) ยังอยู่
 
 EJS templates อยู่ใน [views/](views/), static อยู่ใน [public/](public/) (mount ที่ `/static` ด้วย) มี 2 รูปแบบ:
-- **server-rendered** (วน `rows` ใน EJS): `member`, `thisweekdashboard`, `nextweekdashboard`, `sumweek`, `supervisor`, `hrnextweek`, `busfromhr`, `seatfromhr`
+- **server-rendered** (วน `rows` ใน EJS): `member`, `thisweekdashboard`, `nextweekdashboard`, `sumweek`, `supervisor`, `hrnextweek`, `busfromhr`, `seatfromhr`, `runhistory` (ประวัติจัดรถย้อนหลังทุกวัน เลือกวันผ่าน `?date=`; โชว์ตารางรถ + ผู้โดยสาร)
   - `sumweek.ejs` ใช้ร่วมกันโดย `/sumthisweek` กับ `/sumnextweek` ([index.js](index.js) `buildSumData(which)` นับหัวคนต่อ สาย×วัน×รอบ จาก `getDashboard(which)` = `chp2.booking`); แสดงเป็น **แท็บแยกวัน** ตารางจัดกลุ่มขาเข้า/ขาออก + ยอดรวมแถว/คอลัมน์ ซ่อนสายที่ไม่มีคนจองในวันนั้น (default แท็บ = วันนี้สำหรับ this / จันทร์สำหรับ next, fallback วันแรกที่มีข้อมูล)
 - **client-rendered** (`<tbody>` ว่าง, JS fetch endpoint `*json` มา build เอง): `driver`, `seatdriver`, `bustoday`, `seattoday`, `changelog` และ LIFF app (`register`, `nextweek`, `thisweek`) — contract ของ field อยู่ใน `public/js/*.js` ไม่ใช่ใน template
 
