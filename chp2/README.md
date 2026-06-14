@@ -36,7 +36,7 @@ node chp2/adminServer.js                  # หน้า admin -> http://localho
 
 1. `route.never_merge` → วิ่งเดี่ยวเสมอ (P1: CHP15/16)
 2. `dispatch_rule` (P2-6) → มีคนในช่วงจุด solo ของทิศนั้นไหม? มี=วิ่งเดี่ยว / ไม่มี=ยุบเข้า `else_group` (หรือ `else_group_alt`)
-3. `route.bus_threshold` → คน ≥ เกณฑ์ → ใช้ `bus_route` (P5: CHP12 ≥26 → CHP12-2 cap 42)
+3. `route.bus_threshold` → คน ≥ เกณฑ์ → ใช้ `bus_route` (P5: CHP12 **≥14** → CHP12-2 cap 42 — แก้จาก 26 เมื่อ 2026-06-14, ดู [migrate/06](../migrate/06_rmt_rules_2026-06.sql))
 4. `route.min_solo_pax` → คน ≥ เกณฑ์ → วิ่งเดี่ยว (P7, ปกติ 7)
 5. มิฉะนั้น → ยุบ: ไล่ `merge_group` ตาม priority, ถ้าสมาชิกที่ยุบ (≥2 สาย) รวมกัน ≤ `seat_cap` และ `only_slot` ตรง → 1 คันรวม; เหลือยุบไม่ลง → วิ่งเดี่ยว
 
