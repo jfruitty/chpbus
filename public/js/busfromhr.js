@@ -1,76 +1,7 @@
+// /busfromhr and /bushistory. Filtering / sorting / pagination are handled by
+// table-tools.js (the 4 filter inputs carry data-col attributes → per-column
+// filter mode, same as /driver). This file only wires the download button.
 document.addEventListener('DOMContentLoaded', () => {
-  // Elements
-
-  const routeInput = document.querySelector('.filter-bar input[placeholder="สายรถ"]');
-  const dayInput = document.querySelector('.filter-bar input[placeholder="วัน"]');
-  const boundInput = document.querySelector('.filter-bar input[placeholder="ขา"]');
-  const timeInput = document.querySelector('.filter-bar input[placeholder="เวลา"]');
-
-  const tableBody = document.querySelector('.approval-table tbody');
-
-  const resultsDisplay = document.querySelector('.results span');
-
-  let totalRows = tableBody.querySelectorAll('tr').length;
-  resultsDisplay.textContent = `${totalRows} Result(s)`;
-
-  let rows = tableBody.querySelectorAll('tr');
-
-  const renderRows = () => {
-    rows.forEach((row, index) => {
-      row.style.display = '';
-    });
-    resultsDisplay.textContent = `${totalRows} Result(s)`;
-  };
-
-  // Initial render
-  renderRows();
-
-  // Filter and Search
-  const filterRows = () => {
-    const routeTerm = routeInput.value.toLowerCase();
-    const dayTerm = dayInput.value.toLowerCase();
-    const boundTerm = boundInput.value.toLowerCase();
-    const timeTerm = timeInput.value.toLowerCase();
-
-    totalRows = 0;
-    let newrow = []
-    const allrows = tableBody.querySelectorAll('tr');
-
-    allrows.forEach(row => {
-      const cells = row.querySelectorAll('td');
-      const routeInput = cells[3].textContent.toLowerCase();
-      const dayInput = cells[4].textContent.toLowerCase();
-      const boundInput = cells[5].textContent.toLowerCase();
-      const timeInput = cells[6].textContent.toLowerCase();
-
-      allrows.forEach((row) => {
-        row.style.display = 'none';
-      });
-
-      const matchesRoute = routeTerm === '' || routeInput.includes(routeTerm)
-      const matchesDay = dayTerm === '' || dayInput.includes(dayTerm)
-      const matchesBound = boundTerm === '' || boundInput.includes(boundTerm)
-      const matchesTime = timeTerm === '' || timeInput.includes(timeTerm)
-
-      if (matchesRoute && matchesDay && matchesBound && matchesTime) {
-
-        newrow.push(row)
-        totalRows++;
-      }
-    });
-
-    rows = newrow
-    renderRows();
-  };
-
-
-  dayInput.addEventListener('input', filterRows);
-  routeInput.addEventListener('input', filterRows);
-  boundInput.addEventListener('input', filterRows);
-  timeInput.addEventListener('input', filterRows);
-
-
-
   document.getElementById('downloadCsvButton').addEventListener('click', () => {
     fetch('/download-excel-busfromhr')
       .then(response => {
@@ -93,8 +24,4 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('Error downloading CSV:', error);
       });
   });
-
-
-
-
 });

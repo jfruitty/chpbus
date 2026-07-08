@@ -35,24 +35,10 @@
                 </div>
             </header>
             <section class="filter-bar">
-                <div class="filter-field">
-                    <label>เลขประจำตัว</label>
-                    <input type="text" placeholder="เลขประจำตัว">
-                </div>
-                <div class="filter-field">
-                    <label>ชื่อ / นามสกุล</label>
-                    <input type="text" placeholder="ชื่อ">
-                </div>
-                <div class="filter-field">
-                    <label>แผนก</label>
-                    <select class="dept-filter">
-                        <option value="">ทุกแผนก</option>
-                        <% (departments || []).forEach(function (d) { %>
-                            <option value="<%= d %>"><%= d %></option>
-                        <% }) %>
-                    </select>
-                </div>
-                <button class="apply-btn">ค้นหา</button>
+                <input type="text" placeholder="สายรถ" data-filter="route">
+                <input type="text" placeholder="วัน" data-filter="day">
+                <input type="text" placeholder="ขา" data-filter="bound">
+                <input type="text" placeholder="เวลา" data-filter="time">
             </section>
             <section class="table-section">
                 <table class="approval-table">
@@ -64,25 +50,25 @@
                             <th>นามสกุล</th>
                             <th>จุดขึ้นรถ</th>
                             <th>แผนก</th>
-                            <th>🟡 เข้า</th>
-                            <th>🟡 ออก</th>
-                            <th>🌸 เข้า</th>
-                            <th>🌸 ออก</th>
-                            <th>🟢 เข้า</th>
-                            <th>🟢 ออก</th>
-                            <th>🟠 เข้า</th>
-                            <th>🟠 ออก</th>
-                            <th>🔵 เข้า</th>
-                            <th>🔵 ออก</th>
-                            <th>🟣 เข้า</th>
-                            <th>🟣 ออก</th>
-                            <th>🔴 เข้า</th>
-                            <th>🔴 ออก</th>
+                            <th data-day="จันทร์" data-bound="ขาเข้า">🟡 เข้า</th>
+                            <th data-day="จันทร์" data-bound="ขาออก">🟡 ออก</th>
+                            <th data-day="อังคาร" data-bound="ขาเข้า">🌸 เข้า</th>
+                            <th data-day="อังคาร" data-bound="ขาออก">🌸 ออก</th>
+                            <th data-day="พุธ" data-bound="ขาเข้า">🟢 เข้า</th>
+                            <th data-day="พุธ" data-bound="ขาออก">🟢 ออก</th>
+                            <th data-day="พฤหัสบดี" data-bound="ขาเข้า">🟠 เข้า</th>
+                            <th data-day="พฤหัสบดี" data-bound="ขาออก">🟠 ออก</th>
+                            <th data-day="ศุกร์" data-bound="ขาเข้า">🔵 เข้า</th>
+                            <th data-day="ศุกร์" data-bound="ขาออก">🔵 ออก</th>
+                            <th data-day="เสาร์" data-bound="ขาเข้า">🟣 เข้า</th>
+                            <th data-day="เสาร์" data-bound="ขาออก">🟣 ออก</th>
+                            <th data-day="อาทิตย์" data-bound="ขาเข้า">🔴 เข้า</th>
+                            <th data-day="อาทิตย์" data-bound="ขาออก">🔴 ออก</th>
                         </tr>
                     </thead>
                     <tbody>
                         <% rows.forEach((row, index)=> { %>
-                            <tr data-userid="<%= row.userid %>" data-department="<%= row.department || '' %>">
+                            <tr data-userid="<%= row.userid %>" data-department="<%= row.department || '' %>" data-route="<%= row.route || '' %>">
                                 <td>
                                     <%= index + 1 %>
                                 </td>
@@ -204,18 +190,6 @@
                             <% }) %>
                     </tbody>
                 </table>
-                <div class="footer-table">
-                    <div class="pagination">
-                        <button class="prev-page">&lt;</button>
-                        <span>1/10 Pages</span>
-                        <button class="next-page">&gt;</button>
-                    </div>
-                    <div class="results">
-                        <span>1 result(s)</span>
-                    </div>
-
-                </div>
-
             </section>
         </main>
     </div>

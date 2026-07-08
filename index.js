@@ -912,9 +912,9 @@ app.get('/passengerusersjson', requireRole('admin', 'driver'), async (req, res) 
 
 // --- Booking dashboards (admin) ---
 
-// Distinct, non-empty department names from chp.users, sorted.
-// Drives the department filter dropdown on the booking dashboards
-// (replaces the old hardcoded list).
+// Distinct, non-empty department names, sorted.
+// Drives the department dropdown on /member (the booking dashboards now
+// filter via table-tools' unified search + grid filters instead).
 async function getChpDepartments() {
   return chp2Store.getDepartments(pool);   // chp2
 }
@@ -922,8 +922,7 @@ async function getChpDepartments() {
 app.get('/thisweekdashboard', requireRole('admin'), async (req, res) => {
   try {
     const rows = await chp2Store.getDashboard(pool, 'this');   // chp2
-    const departments = await getChpDepartments();
-    res.render('thisweekdashboard', { rows, departments });
+    res.render('thisweekdashboard', { rows });
   } catch (err) {
     console.error('GET /thisweekdashboard error:', err);
     res.status(500).send('Server Error');
@@ -933,8 +932,7 @@ app.get('/thisweekdashboard', requireRole('admin'), async (req, res) => {
 app.get('/nextweekdashboard', requireRole('admin'), async (req, res) => {
   try {
     const rows = await chp2Store.getDashboard(pool, 'next');   // chp2
-    const departments = await getChpDepartments();
-    res.render('nextweekdashboard', { rows, departments });
+    res.render('nextweekdashboard', { rows });
   } catch (err) {
     console.error('GET /nextweekdashboard error:', err);
     res.status(500).send('Server Error');

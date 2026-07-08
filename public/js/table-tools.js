@@ -6,7 +6,14 @@
 //          and act as column-targeted filters. Used on /driver, /seatdriver.
 //       b) unified-search mode (single search box across all columns) when no
 //          data-col inputs exist. Replaces the legacy per-column filter inputs
-//          which are hidden. Used on /member, /thisweekdashboard, etc.
+//          which are hidden. Used on /member etc.
+//          Additionally, filter-bar controls with data-filter="route|day|bound|time"
+//          act as booking-grid filters on top of the search box (used on
+//          /thisweekdashboard, /nextweekdashboard where day/bound are spread
+//          across 14 columns): route matches the row's data-route attribute;
+//          day/bound select the grid columns via the <th data-day data-bound>
+//          attributes; the row matches when at least one selected cell holds a
+//          booked time (not ❌/ไม่ใช้) that contains the time term.
 //   2. click-to-sort column headers (click again to reverse).
 //   3. pagination — the visible (matched + sorted) rows are split into pages of
 //      `pageSize` (default 20, override via `data-page-size` on the table). The
@@ -54,6 +61,24 @@
       : [];
     var columnMode = colInputs.length > 0;
 
+    // Booking-grid filters (dashboards): stay visible alongside the unified
+    // search box and AND with it.
+    var gridInputs = bar && !columnMode
+      ? Array.prototype.slice.call(bar.querySelectorAll('input[data-filter], select[data-filter]'))
+      : [];
+
+    // Grid columns declared by the page: <th data-day="จันทร์" data-bound="ขาเข้า">
+    var gridCols = [];
+    headers.forEach(function (th, i) {
+      if (th.getAttribute('data-day')) {
+        gridCols.push({
+          day: th.getAttribute('data-day'),
+          bound: th.getAttribute('data-bound') || '',
+          idx: i
+        });
+      }
+    });
+
     if (columnMode) {
       // Per-column filters: keep them visible, drive apply() on input.
       colInputs.forEach(function (inp) {
@@ -61,9 +86,14 @@
       });
     } else {
       // Unified-search: hide legacy per-column controls, inject one search box.
+      // data-filter grid controls are kept visible and drive apply() below.
       document.querySelectorAll('.filter-bar input, .filter-bar select').forEach(function (el) {
+        if (el.hasAttribute('data-filter')) return;
         el.style.display = 'none';
         if (el.value) el.value = '';
+      });
+      gridInputs.forEach(function (inp) {
+        inp.addEventListener('input', function () { state.page = 1; apply(); });
       });
       var search = document.createElement('input');
       search.type = 'text';
@@ -141,6 +171,30 @@
       }
       return parts.join(' ').toLowerCase();
     }
+    function gridMatches(row) {
+      if (!gridInputs.length) return true;
+      var t = {};
+      gridInputs.forEach(function (inp) {
+        t[inp.getAttribute('data-filter')] = inp.value.trim().toLowerCase();
+      });
+      if (t.route) {
+        var route = (row.getAttribute('data-route') || '').toLowerCase();
+        if (route.indexOf(t.route) === -1) return false;
+      }
+      if (t.day || t.bound || t.time) {
+        var cols = gridCols.filter(function (c) {
+          return (!t.day || c.day.toLowerCase().indexOf(t.day) !== -1) &&
+                 (!t.bound || c.bound.toLowerCase().indexOf(t.bound) !== -1);
+        });
+        var hit = cols.some(function (c) {
+          var txt = cellText(row, c.idx);
+          if (!txt || txt === '❌' || txt.indexOf('ไม่ใช้') !== -1) return false;
+          return !t.time || txt.toLowerCase().indexOf(t.time) !== -1;
+        });
+        if (!hit) return false;
+      }
+      return true;
+    }
     function rowMatches(row) {
       if (columnMode) {
         for (var i = 0; i < colInputs.length; i++) {
@@ -153,6 +207,7 @@
         }
         return true;
       }
+      if (!gridMatches(row)) return false;
       return !state.term || rowText(row).indexOf(state.term) !== -1;
     }
     function compare(a, b) {
