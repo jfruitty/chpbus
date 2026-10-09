@@ -939,6 +939,52 @@ app.get('/nextweekdashboard', requireRole('admin'), async (req, res) => {
   }
 });
 
+// ปุ่ม "ดาวน์โหลด Excel" บนหน้า this/next week dashboard — grid การจองรายคน
+// (ชุดเดียวกับที่หน้าแสดง) stream เป็น xlsx ตรง ๆ ไม่ผ่านไฟล์ temp
+const CHP_DASH_DAYS = [['monday', 'จันทร์'], ['tuesday', 'อังคาร'], ['wednesday', 'พุธ'], ['thursday', 'พฤหัส'],
+  ['friday', 'ศุกร์'], ['saturday', 'เสาร์'], ['sunday', 'อาทิตย์']];
+
+async function chpDownloadDashboardExcel(which, res) {
+  try {
+    const rows = await chp2Store.getDashboard(pool, which);
+    const { rows: [w] } = await pool.query(
+      `SELECT to_char(date_trunc('week', CURRENT_DATE)::date + $1::int, 'YYYY-MM-DD') AS week_of`,
+      [which === 'next' ? 7 : 0]);
+
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet(which === 'next' ? 'สัปดาห์หน้า' : 'สัปดาห์นี้');
+    ws.columns = [
+      { header: 'รหัสพนักงาน', key: 'perid', width: 12 },
+      { header: 'ชื่อ', key: 'first_name', width: 16 },
+      { header: 'นามสกุล', key: 'last_name', width: 18 },
+      { header: 'แผนก', key: 'department', width: 28 },
+      { header: 'หัวหน้า', key: 'supervisor', width: 14 },
+      { header: 'สายรถ', key: 'route', width: 18 },
+      { header: 'จุดขึ้นรถ', key: 'location', width: 32 },
+      { header: 'อนุมัติแผนก', key: 'department_approval', width: 12 },
+      ...CHP_DASH_DAYS.flatMap(([en, th]) => [
+        { header: `${th} ขาเข้า`, key: `${en}_inbound`, width: 11 },
+        { header: `${th} ขาออก`, key: `${en}_outbound`, width: 11 },
+      ]),
+    ];
+    ws.getRow(1).font = { bold: true };
+    ws.views = [{ state: 'frozen', xSplit: 3, ySplit: 1 }];
+    rows.forEach(r => ws.addRow(r));
+
+    const filename = `booking_${which}week_${w.week_of}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    console.error(`chpDownloadDashboardExcel(${which}) error:`, err);
+    if (!res.headersSent) res.status(500).send('Internal Server Error');
+  }
+}
+
+app.get('/download-excel-thisweekdashboard', requireRole('admin'), (req, res) => chpDownloadDashboardExcel('this', res));
+app.get('/download-excel-nextweekdashboard', requireRole('admin'), (req, res) => chpDownloadDashboardExcel('next', res));
+
 app.post('/update-approval-department-thisweek', requireRole('admin'), async (req, res) => {
   const { userId, status } = req.body;
   try {

@@ -166,6 +166,7 @@ template ที่ไม่ถูกใช้/พัง (ข้ามได้):
 ### Export CSV/Excel
 
 endpoint `GET /download-csv-*` และ `/download-excel-*` ใช้ `csv-writer` / `exceljs` dump ตาราง bus/seat ให้ HR (ผ่าน `chpDownloadCsv`/`chpDownloadExcel`) — เขียนไฟล์ temp ลง disk แล้ว serve ด้วย `res.download()` และ `fs.unlink` ลบทิ้งใน callback
+- หน้า `thisweekdashboard`/`nextweekdashboard` มีปุ่ม "⬇ ดาวน์โหลด Excel" (ใน `.actions` ของ header) → `GET /download-excel-thisweekdashboard` / `-nextweekdashboard` (`requireRole('admin')`, helper `chpDownloadDashboardExcel(which)`): ดึง grid การจองรายคนจาก `chp2Store.getDashboard` (ชุดเดียวกับหน้า, **ไม่สน filter บนหน้า**) หัวคอลัมน์ไทย + เวลา 14 ช่อง แล้ว **stream xlsx ลง `res` ตรง ๆ ไม่ผ่านไฟล์ temp**; ชื่อไฟล์ `booking_{this|next}week_{จันทร์ของสัปดาห์}.xlsx`
 - ชื่อไฟล์ temp ทำให้ **ไม่ซ้ำต่อ request** ผ่าน helper `chpTmpPath()` (`{ชื่อ}-{pid}-{counter}.ext` ใน `os.tmpdir()`) — เดิมใช้ชื่อคงที่ใน root โปรเจกต์ ทำให้กดโหลดซ้อนกันแล้ว `unlink` ของ request แรกลบไฟล์ทิ้งระหว่างที่ request ที่สอง stat อยู่ → `ENOENT` (เคยเจอจริงที่ `/download-excel-seattoday`). ชื่อที่ผู้ใช้ดาวน์โหลดยังคุมด้วย arg ที่ 2 ของ `res.download` (เช่น `seattoday.xlsx`)
 
 ### การแจ้งเตือน (Notifications)
